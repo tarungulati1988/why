@@ -12,6 +12,17 @@ See the full design: [`docs/design/why-idea-04-18-2026-1.0.0.md`](docs/design/wh
 
 Not yet published to PyPI. For now, install from source — see Development below.
 
+## Running
+
+Once installed (see Development), `why` is available as a CLI:
+
+```bash
+why --version
+```
+
+No analysis commands yet — the CLI is a stub. See the design doc linked
+above for the planned surface.
+
 ## Development
 
 Requires Python 3.11+.
@@ -20,9 +31,20 @@ Requires Python 3.11+.
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
-pytest
-ruff check src tests
-mypy src
+```
+
+Run the full check suite:
+
+```bash
+pytest              # all tests
+ruff check .        # lint
+mypy src            # strict type check
+```
+
+Run a single test file while iterating:
+
+```bash
+pytest tests/test_git.py -v
 ```
 
 ## License
