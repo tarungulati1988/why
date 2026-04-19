@@ -1,0 +1,56 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "why"
+dynamic = ["version"]
+readme = "README.md"
+description = "Explains why code is the way it is via git history and LLM synthesis."
+license = { file = "LICENSE" }
+authors = [{ name = "Tarun Gulati", email = "tarun.gulati1988@gmail.com" }]
+requires-python = ">=3.11"
+dependencies = ["click>=8.1"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "License :: OSI Approved :: MIT License",
+  "Development Status :: 2 - Pre-Alpha",
+  "Environment :: Console",
+]
+
+[project.urls]
+Source = "https://github.com/tarungulati1988/why"
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.11"]
+
+[project.scripts]
+why = "why.cli:main"
+
+[tool.hatch.version]
+path = "src/why/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+# Tell hatchling to find the package inside src/
+packages = ["src/why"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "PT"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["why"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+# Only type-check source code, not tests
+files = ["src"]

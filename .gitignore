@@ -1,0 +1,33 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+*.egg-info/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+.env
+.env.*
+*.env
+.secrets
+secrets.*
+
+# Type checker and linter caches
+.mypy_cache/
+.ruff_cache/
+
+# Test caches and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# macOS metadata
+.DS_Store
+
+# Logs
+*.log
