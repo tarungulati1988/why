@@ -23,12 +23,30 @@ class GitTimeoutError(GitError):
     """Raised when a git command exceeds its timeout."""
 
 
-# Environment overrides applied to every git invocation to suppress interactive
-# prompts, pagers, and editors that would hang a subprocess call.
+# Environment overrides applied to every git invocation. Each one closes a
+# specific way git can block a headless subprocess or drift under the user's
+# locale. See `git help environment` for the canonical reference.
 _HARDENING_ENV = {
+    # Git feature: if set to 0, git refuses to prompt on the controlling
+    # terminal for usernames/passwords (normally triggered by HTTPS remotes
+    # without a credential helper). Instead of hanging forever waiting for
+    # stdin, git exits with a "terminal prompts disabled" error we can surface.
     "GIT_TERMINAL_PROMPT": "0",
+    # Git feature: overrides `core.pager` for this invocation. Git's default
+    # pager is `less`, which can attach to a TTY and wait for the user to
+    # press `q`. Forcing `cat` makes pagination a no-op pass-through.
     "GIT_PAGER": "cat",
+    # Git feature: overrides `core.editor` for commands that would otherwise
+    # open `$EDITOR` (commit, rebase -i, tag -a). `true` is a shell builtin
+    # that exits 0 with no output, so any unexpected editor invocation
+    # returns immediately instead of blocking on vim/nano.
     "GIT_EDITOR": "true",
+    # POSIX locale override (not git-specific): forces all libc-localised
+    # output — including git's own stderr messages — to the "C" locale
+    # (ASCII English). Required because we substring-match on English
+    # phrases like "not a git repository" to classify errors; a German or
+    # Japanese user's default locale would otherwise silently break that
+    # classification.
     "LC_ALL": "C",
 }
 
