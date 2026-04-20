@@ -8,17 +8,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from conftest import _tmp_path_is_clean
 
 from why.git import GitError, GitNotFoundError, GitTimeoutError, NotAGitRepoError, run_git
-
-
-def _tmp_path_is_clean(tmp_path: Path) -> bool:
-    """Return True if tmp_path is NOT inside an existing git repo."""
-    result = subprocess.run(
-        ["git", "rev-parse", "--git-dir"],
-        cwd=tmp_path, capture_output=True, text=True, check=False,
-    )
-    return result.returncode != 0
 
 # ---------------------------------------------------------------------------
 # Helpers
