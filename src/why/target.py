@@ -48,8 +48,8 @@ def parse_target(
 
     try:
         resolved.relative_to(repo_root)
-    except ValueError:
-        raise TargetError(f"path escapes repository root: {resolved}")
+    except ValueError as e:
+        raise TargetError(f"path escapes repository root: {resolved}") from e
 
     if not resolved.exists():
         raise TargetError(f"file not found: {resolved}")

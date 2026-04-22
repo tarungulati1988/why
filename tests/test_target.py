@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from why.target import Target, TargetError, parse_target
+from why.target import TargetError, parse_target
 
 
-@pytest.fixture()
+@pytest.fixture
 def tmp_repo(tmp_path: Path) -> Path:
     """Create a minimal repo layout with a real file for path resolution."""
     src = tmp_path / "src"
