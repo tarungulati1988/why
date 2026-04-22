@@ -1,17 +1,16 @@
-"""Tests for why.history.get_file_history."""
+"""Tests for why.history: get_file_history and get_line_history."""
 
 from __future__ import annotations
 
-import os
-import subprocess
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from conftest import _tmp_path_is_clean
+from conftest import _tmp_path_is_clean, make_git_runner
 
-from why.history import get_file_history
+from why.git import GitError
+from why.history import get_file_history, get_line_history
 
 # ---------------------------------------------------------------------------
 # Unit tests — run_git and parse_porcelain are mocked
@@ -99,30 +98,8 @@ def renamed_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
     repo.mkdir()
 
-    base_env = {
-        **os.environ,
-        "GIT_AUTHOR_NAME": "Test",
-        "GIT_AUTHOR_EMAIL": "test@example.com",
-        "GIT_COMMITTER_NAME": "Test",
-        "GIT_COMMITTER_EMAIL": "test@example.com",
-        "GIT_TERMINAL_PROMPT": "0",
-    }
-
-    def git(*args: str, date: str | None = None) -> None:
-        env = {**base_env}
-        if date is not None:
-            # Override both author and committer timestamps so the commit is
-            # recorded at a deterministic time regardless of when the test runs.
-            env["GIT_AUTHOR_DATE"] = date
-            env["GIT_COMMITTER_DATE"] = date
-        subprocess.run(
-            ["git", *args],
-            cwd=repo,
-            check=True,
-            capture_output=True,
-            text=True,
-            env=env,
-        )
+    # Delegate to the shared factory — eliminates duplicated base_env boilerplate.
+    git = make_git_runner(repo)
 
     git("init")
 
@@ -188,3 +165,184 @@ class TestNoHistory:
         ghost = renamed_repo / "never_existed.py"
         result = get_file_history(ghost, renamed_repo)
         assert result == []
+
+
+# ---------------------------------------------------------------------------
+# get_line_history — unit tests
+# ---------------------------------------------------------------------------
+
+class TestLineHistoryArgs:
+    """Verify get_line_history builds the correct git args."""
+
+    def test_args_contain_L_flag(self) -> None:
+        """-L<line>,<line>:<rel> must appear in the args passed to run_git."""
+        fake_repo = Path("/fake/repo")
+        target_file = fake_repo / "foo.py"
+        line = 3
+
+        with (
+            patch("why.history.run_git", return_value="") as mock_run_git,
+            patch("why.history.parse_porcelain", return_value=[]),
+        ):
+            get_line_history(target_file, fake_repo, line=line)
+
+        args_passed = mock_run_git.call_args.args[0]
+        rel = target_file.relative_to(fake_repo)
+        assert f"-L{line},{line}:{rel}" in args_passed
+
+    def test_args_contain_no_patch(self) -> None:
+        """--no-patch must appear in args (shortstat is skipped for line history)."""
+        fake_repo = Path("/fake/repo")
+        target_file = fake_repo / "foo.py"
+
+        with (
+            patch("why.history.run_git", return_value="") as mock_run_git,
+            patch("why.history.parse_porcelain", return_value=[]),
+        ):
+            get_line_history(target_file, fake_repo, line=1)
+
+        args_passed = mock_run_git.call_args.args[0]
+        assert "--no-patch" in args_passed
+
+    def test_args_do_not_contain_follow(self) -> None:
+        """--follow must NOT appear in args — line history doesn't traverse renames."""
+        fake_repo = Path("/fake/repo")
+        target_file = fake_repo / "foo.py"
+
+        with (
+            patch("why.history.run_git", return_value="") as mock_run_git,
+            patch("why.history.parse_porcelain", return_value=[]),
+        ):
+            get_line_history(target_file, fake_repo, line=1)
+
+        args_passed = mock_run_git.call_args.args[0]
+        assert "--follow" not in args_passed
+
+
+class TestLineHistoryOutOfBounds:
+    """Verify out-of-bounds line number returns [] instead of raising."""
+
+    def test_out_of_bounds_returns_empty(self) -> None:
+        """GitError with 'has only' in the message should return []."""
+        fake_repo = Path("/fake/repo")
+        target_file = fake_repo / "foo.py"
+
+        with patch(
+            "why.history.run_git",
+            side_effect=GitError("file foo.py has only 5 lines"),
+        ):
+            result = get_line_history(target_file, fake_repo, line=99)
+
+        assert result == []
+
+    def test_other_git_error_re_raises(self) -> None:
+        """GitError without 'has only' must propagate unchanged."""
+        fake_repo = Path("/fake/repo")
+        target_file = fake_repo / "foo.py"
+
+        with (
+            patch(
+                "why.history.run_git",
+                side_effect=GitError("some other error"),
+            ),
+            pytest.raises(GitError, match="some other error"),
+        ):
+            get_line_history(target_file, fake_repo, line=1)
+
+
+# ---------------------------------------------------------------------------
+# get_line_history — integration tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def line_history_repo(tmp_path: Path) -> Path:
+    """Build a real git repo where 3 commits each touch line 1 of foo.py.
+
+    History (oldest to newest):
+      A — write "line1\\nline2\\nline3\\n" to foo.py
+      B — change line 1 to "line1 updated"
+      C — change line 1 to "line1 final"
+
+    Returns the repo root Path.
+    """
+    if not _tmp_path_is_clean(tmp_path):
+        pytest.skip("tmp_path is inside an existing git repo — skipping integration test")
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    # Delegate to the shared factory — eliminates duplicated base_env boilerplate.
+    git = make_git_runner(repo)
+
+    git("init")
+
+    # Commit A: create foo.py with 3 lines
+    (repo / "foo.py").write_text("line1\nline2\nline3\n")
+    git("add", "foo.py")
+    git("commit", "-m", "A: create foo.py")
+
+    # Commit B: update line 1
+    (repo / "foo.py").write_text("line1 updated\nline2\nline3\n")
+    git("add", "foo.py")
+    git("commit", "-m", "B: update line 1")
+
+    # Commit C: update line 1 again
+    (repo / "foo.py").write_text("line1 final\nline2\nline3\n")
+    git("add", "foo.py")
+    git("commit", "-m", "C: finalize line 1")
+
+    return repo
+
+
+class TestLineHistoryGuards:
+    """Verify get_line_history input validation."""
+
+    def test_line_zero_raises_value_error(self) -> None:
+        """line=0 must raise ValueError before any git call."""
+        fake_repo = Path("/fake/repo")
+        target_file = fake_repo / "foo.py"
+        with pytest.raises(ValueError, match="line must be >= 1"):
+            get_line_history(target_file, fake_repo, line=0)
+
+    def test_negative_line_raises_value_error(self) -> None:
+        """Negative line must raise ValueError before any git call."""
+        fake_repo = Path("/fake/repo")
+        target_file = fake_repo / "foo.py"
+        with pytest.raises(ValueError, match="line must be >= 1"):
+            get_line_history(target_file, fake_repo, line=-5)
+
+    def test_file_outside_repo_raises_value_error(self, tmp_path: Path) -> None:
+        """A file outside the repo root must raise ValueError."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        outside_file = tmp_path / "outside.py"
+        outside_file.write_text("x\n")
+        with pytest.raises(ValueError, match="escapes repository root"):
+            get_line_history(outside_file, repo, line=1)
+
+
+class TestLineHistoryIntegration:
+    """Integration: get_line_history runs real git and returns correct commits."""
+
+    def test_returns_all_commits_touching_line_1(self, line_history_repo: Path) -> None:
+        """All 3 commits modify line 1 — all 3 must be returned."""
+        commits = get_line_history(
+            line_history_repo / "foo.py", line_history_repo, line=1
+        )
+        assert len(commits) == 3
+
+    def test_line_out_of_bounds_returns_empty(self, line_history_repo: Path) -> None:
+        """Requesting a line beyond the file's length must return []."""
+        result = get_line_history(
+            line_history_repo / "foo.py", line_history_repo, line=999
+        )
+        assert result == []
+
+    def test_commits_are_newest_first(self, line_history_repo: Path) -> None:
+        """get_line_history returns commits newest-first (matching git log default)."""
+        commits = get_line_history(
+            line_history_repo / "foo.py", line_history_repo, line=1
+        )
+        assert commits[0].subject == "C: finalize line 1"
+        assert commits[2].subject == "A: create foo.py"
