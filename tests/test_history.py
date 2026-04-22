@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -12,7 +12,6 @@ import pytest
 from conftest import _tmp_path_is_clean
 
 from why.history import get_file_history
-
 
 # ---------------------------------------------------------------------------
 # Unit tests — run_git and parse_porcelain are mocked
@@ -24,7 +23,7 @@ class TestSinceFilter:
 
     def test_since_is_included_when_provided(self) -> None:
         """--since=<iso> must appear in the args forwarded to run_git."""
-        since_dt = datetime(2024, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+        since_dt = datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC)
         mock_commits = [MagicMock()]
         fake_repo = Path("/fake/repo")
 
