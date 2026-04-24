@@ -26,9 +26,8 @@ EXTENSION_TO_LANG: dict[str, str] = {
     ".go": "go",
 }
 
-# Tree-sitter query that captures named Python definitions (functions and classes).
-# Note: async functions are represented as function_definition nodes in this grammar version.
-# Each match yields a "name" capture (the identifier node) and a "definition" capture (the full node).
+# Tree-sitter query for Python: captures named functions and classes.
+# async functions use function_definition in this grammar version (no separate async node).
 _PYTHON_QUERY = """
 [
   (function_definition name: (identifier) @name) @definition
