@@ -1,8 +1,8 @@
 """File commit history retrieval for the why CLI.
 
-This module provides ``get_file_history`` and ``get_line_history``: thin
-orchestration layers that build git invocations and delegate parsing to
-``parse_porcelain``.
+This module provides ``get_file_history``, ``get_line_history``, and
+``find_introduction``: thin orchestration layers that build git invocations
+and delegate parsing to ``parse_porcelain``.
 
 Design note — why relative paths are not normalised here:
   ``target.py`` always resolves paths to absolute before they reach this
@@ -103,3 +103,44 @@ def get_line_history(file: Path, repo: Path, *, line: int) -> list[Commit]:
             return []
         raise
     return parse_porcelain(output)
+
+
+def find_introduction(file: Path, repo: Path) -> Commit | None:
+    """Return the oldest commit that first introduced ``file`` into the repo.
+
+    Uses ``--diff-filter=A --follow`` to find the commit that added the file,
+    traversing renames so the original introduction is found even if the file
+    was later renamed.
+
+    Args:
+        file: Absolute path to the file whose introduction commit is requested.
+        repo: Root of the git repository (used as the cwd for git).
+
+    Returns:
+        The oldest :class:`Commit` that added ``file``, or ``None`` if the
+        file has no git history (e.g., untracked or never committed).
+    """
+    # NOTE: enhancement opportunity — path-confinement guard
+    # If callers ever bypass Target resolution and pass untrusted paths directly,
+    # add a guard here similar to get_line_history:
+    #   resolved = file.resolve()
+    #   repo_resolved = repo.resolve()
+    #   if not resolved.is_relative_to(repo_resolved):
+    #       raise ValueError(f"file {file} escapes repository root {repo}")
+    # At that point also pass str(resolved) instead of str(file).
+    args = [
+        "log",
+        "--diff-filter=A",
+        "--follow",
+        f"--format={PORCELAIN_FORMAT}",
+        "--",
+        str(file),
+    ]
+    output = run_git(args, cwd=repo)
+    if not output.strip():
+        return None
+    commits = parse_porcelain(output)
+    # parse_porcelain returns newest-first. --diff-filter=A --follow normally
+    # yields exactly 1 commit, but a file deleted and re-added has multiple add
+    # events. commits[-1] always returns the oldest (the true introduction).
+    return commits[-1] if commits else None
