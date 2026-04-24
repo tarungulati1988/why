@@ -232,7 +232,7 @@ def test_select_includes_recent_substantive() -> None:
         make_commit(sha=f"{i:040d}", days_ago=10 + i, subject="chore: bump dep")
         for i in range(8)
     ]
-    all_commits = older_commits + [newest_substantive]
+    all_commits = [*older_commits, newest_substantive]
     result = select_key_commits(all_commits, {}, n=3, now=NOW)
     result_shas = {c.sha for c in result}
     assert newest_substantive.sha in result_shas, (
@@ -316,7 +316,7 @@ def test_select_with_prs() -> None:
         for i in range(10)
     ]
     prs = {pr_commit.sha: object()}  # membership is all that matters
-    result = select_key_commits([pr_commit] + fillers, prs, n=3, now=NOW)
+    result = select_key_commits([pr_commit, *fillers], prs, n=3, now=NOW)
     result_shas = {c.sha for c in result}
     # PR bonus is +3.0, which should lift this commit above low-scoring fillers.
     assert pr_commit.sha in result_shas, "PR-backed commit must be boosted into selection"

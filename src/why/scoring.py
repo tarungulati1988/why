@@ -58,7 +58,6 @@ from __future__ import annotations
 import re
 from datetime import date
 from math import log
-from typing import Optional
 
 from .commit import Commit
 
@@ -191,7 +190,7 @@ def select_key_commits(
     commits: list[Commit],
     prs: dict[str, object],  # SHA -> PR object; only membership (sha in prs) is checked
     n: int = 5,
-    now: Optional[date] = None,
+    now: date | None = None,
 ) -> list[Commit]:
     """Select the most explanatory commits from a history, targeting n results.
 
@@ -248,7 +247,7 @@ def select_key_commits(
     # the first one whose score exceeds _SUBSTANTIVE_THRESHOLD.
     # Fallback: if no commit clears the threshold (all junk/merges), we still
     # want the newest commit so the result doesn't look like it stopped in the past.
-    most_recent_substantive: Optional[Commit] = None
+    most_recent_substantive: Commit | None = None
     for c in reversed(sorted_commits):
         if score_by_sha[c.sha] > _SUBSTANTIVE_THRESHOLD:
             most_recent_substantive = c
