@@ -58,6 +58,7 @@ from __future__ import annotations
 import re
 from datetime import date
 from math import log
+from typing import Optional
 
 from .commit import Commit
 
@@ -103,13 +104,17 @@ _JUNK_RES = [re.compile(p) for p in JUNK_PATTERNS]
 #   _JUNK_PENALTY  subtracted when subject matches a JUNK_PATTERN; chosen to
 #                  be large enough to push junk commits below most real commits
 #                  even with a strong recency bonus
-#   _KEYWORD_BONUS added once per keyword found in subject + body
+#   _KEYWORD_BONUS          added once per keyword found in subject + body
+#   _SUBSTANTIVE_THRESHOLD  score floor for the "most recent substantive" anchor
+#                           in select_key_commits; commits at or below this value
+#                           are treated as bookkeeping/noise (exclusive boundary)
 _DIFF_WEIGHT = 2.0
 _PR_BONUS = 3.0
 _RECENCY_MAX = 3.0
 _MERGE_PENALTY = 5.0
 _JUNK_PENALTY = 10.0
 _KEYWORD_BONUS = 2.0
+_SUBSTANTIVE_THRESHOLD = 3.0
 
 
 def score_commit(c: Commit, now: date, has_pr: bool) -> float:
@@ -180,3 +185,97 @@ def score_commit(c: Commit, now: date, has_pr: bool) -> float:
         s -= _JUNK_PENALTY
 
     return s
+
+
+def select_key_commits(
+    commits: list[Commit],
+    prs: dict[str, object],  # SHA -> PR object; only membership (sha in prs) is checked
+    n: int = 5,
+    now: Optional[date] = None,
+) -> list[Commit]:
+    """Select the most explanatory commits from a history, targeting n results.
+
+    Two anchors are always forced into the result regardless of score:
+      1. The oldest commit — it establishes the original intent of the symbol.
+      2. The most-recent substantive commit — explains current behaviour.
+
+    Remaining slots are filled by top-scoring commits up to n total.
+    The result is always sorted oldest-first, with no duplicates.
+
+    Note: n is a target, not a hard cap. When both anchors are distinct and
+    n=1, the function returns 2 commits so neither anchor is silently dropped.
+
+    Parameters
+    ----------
+    commits:  candidate commits in any order (caller need not sort)
+    prs:      mapping of SHA -> PR; only membership (sha in prs) is tested
+    n:        target number of commits to return; must-includes may push result above n
+    now:      reference date for recency scoring; defaults to today
+    """
+    if not commits:
+        return []
+
+    if now is None:
+        now = date.today()
+
+    # Cap n to the number of available commits so remaining_slots arithmetic
+    # never over-allocates candidates beyond what exists.
+    n = min(n, len(commits))
+
+    # Sort by date ascending (oldest first) regardless of what git log returns.
+    # git log defaults to newest-first, but callers shouldn't need to know that —
+    # we normalise here so the rest of the function can assume chronological order.
+    sorted_commits = sorted(commits, key=lambda c: c.date)
+
+    # Edge case: single commit — no anchor logic needed.
+    if len(sorted_commits) == 1:
+        return [sorted_commits[0]]
+
+    # Score every commit; PR lookup is O(1) per commit.
+    scored: list[tuple[float, Commit]] = [
+        (score_commit(c, now, c.sha in prs), c) for c in sorted_commits
+    ]
+
+    # Build a lookup from SHA to score for O(1) access later.
+    score_by_sha: dict[str, float] = {c.sha: s for s, c in scored}
+
+    # --- Must-include set ---
+
+    # Anchor 1: oldest commit always explains where the symbol came from.
+    oldest = sorted_commits[0]
+
+    # Anchor 2: most-recent substantive commit — iterate newest→oldest and pick
+    # the first one whose score exceeds _SUBSTANTIVE_THRESHOLD.
+    # Fallback: if no commit clears the threshold (all junk/merges), we still
+    # want the newest commit so the result doesn't look like it stopped in the past.
+    most_recent_substantive: Optional[Commit] = None
+    for c in reversed(sorted_commits):
+        if score_by_sha[c.sha] > _SUBSTANTIVE_THRESHOLD:
+            most_recent_substantive = c
+            break
+    if most_recent_substantive is None:
+        # Fallback: no substantive commit — use the most recent one anyway.
+        most_recent_substantive = sorted_commits[-1]
+
+    must_includes: set[str] = {oldest.sha, most_recent_substantive.sha}
+
+    # --- Fill picked ---
+
+    # Seed picked with must-includes (order doesn't matter here — final return
+    # sorts by date, so no need for an intermediate score-order sort).
+    picked: list[Commit] = [c for c in sorted_commits if c.sha in must_includes]
+    picked_shas: set[str] = {c.sha for c in picked}
+
+    # Fill remaining slots from top-scoring commits not already picked.
+    remaining_slots = n - len(picked)
+    if remaining_slots > 0:
+        # Sort remaining candidates by score descending; take up to remaining_slots.
+        candidates = sorted(
+            [c for c in sorted_commits if c.sha not in picked_shas],
+            key=lambda c: score_by_sha[c.sha],
+            reverse=True,
+        )
+        picked.extend(candidates[:remaining_slots])
+
+    # Return in chronological order (oldest first), with no duplicates.
+    return sorted(picked, key=lambda c: c.date)
