@@ -7,20 +7,13 @@ from pathlib import Path
 
 import tree_sitter_go as _tsgo
 import tree_sitter_python as _tspython
-from tree_sitter import Language, Parser
+from tree_sitter import Language, Node, Parser, Query
 
 _log = logging.getLogger(__name__)
 
-# Build language objects once at module level to avoid repeated construction overhead.
 _PY_LANGUAGE = Language(_tspython.language())
 _GO_LANGUAGE = Language(_tsgo.language())
 
-_LANGUAGES: dict[str, Language] = {
-    "python": _PY_LANGUAGE,
-    "go": _GO_LANGUAGE,
-}
-
-# Maps file extensions to language names used in _LANGUAGES.
 EXTENSION_TO_LANG: dict[str, str] = {
     ".py": "python",
     ".go": "go",
@@ -28,19 +21,16 @@ EXTENSION_TO_LANG: dict[str, str] = {
 
 # Tree-sitter query for Python: captures named functions and classes.
 # async functions use function_definition in this grammar version (no separate async node).
-_PYTHON_QUERY = """
+_PYTHON_QUERY_STRING = """
 [
   (function_definition name: (identifier) @name) @definition
   (class_definition name: (identifier) @name) @definition
 ]
 """
 
-# Tree-sitter query for Go top-level named definitions.
-# type_declaration wraps one or more type_spec nodes; matching at that level gives us
-# the full declaration range (including the braces for structs/interfaces) rather than
-# just the inner type_spec.  method_spec nodes (interface stubs) are intentionally
-# excluded — only function_declaration and method_declaration are captured at top level.
-_GO_QUERY = """
+# method_spec nodes (interface stubs) are intentionally excluded — only
+# function_declaration and method_declaration match concrete Go definitions.
+_GO_QUERY_STRING = """
 [
   (function_declaration name: (identifier) @name) @definition
   (method_declaration name: (field_identifier) @name) @definition
@@ -48,15 +38,33 @@ _GO_QUERY = """
 ]
 """
 
+# Pre-compiled Query objects and cached Parsers — constructed once at module load.
 _PARSERS: dict[str, Parser] = {
     "python": Parser(_PY_LANGUAGE),
     "go": Parser(_GO_LANGUAGE),
 }
 
-_QUERIES: dict[str, str] = {
-    "python": _PYTHON_QUERY,
-    "go": _GO_QUERY,
+_QUERIES: dict[str, Query] = {
+    "python": Query(_PY_LANGUAGE, _PYTHON_QUERY_STRING),
+    "go": Query(_GO_LANGUAGE, _GO_QUERY_STRING),
 }
+
+# tree-sitter 0.25+ replaced query.matches(node) with QueryCursor(query).matches(node).
+# Both APIs return list[tuple[int, dict[str, list[Node]]]] so the call-site is identical.
+try:
+    from tree_sitter import QueryCursor as _QueryCursor
+
+    def _exec_query(
+        query: Query, node: Node
+    ) -> list[tuple[int, dict[str, list[Node]]]]:
+        return _QueryCursor(query).matches(node)
+
+except ImportError:
+
+    def _exec_query(
+        query: Query, node: Node
+    ) -> list[tuple[int, dict[str, list[Node]]]]:
+        return query.matches(node)  # type: ignore[attr-defined, no-any-return]
 
 
 class SymbolNotFoundError(Exception):
@@ -74,19 +82,15 @@ def find_symbol_range(file: Path, symbol: str) -> tuple[int, int]:
     if lang_name is None:
         raise SymbolNotFoundError(f"unsupported language: {file.suffix}")
 
-    language = _LANGUAGES[lang_name]
     parser = _PARSERS[lang_name]
     try:
         source = file.read_bytes()
     except OSError as exc:
         raise SymbolNotFoundError(f"cannot read {file}: {exc}") from exc
     tree = parser.parse(source)
-    query_string = _QUERIES[lang_name]
 
-    query = language.query(query_string)
-    matches = query.matches(tree.root_node)
+    matches = _exec_query(_QUERIES[lang_name], tree.root_node)
 
-    # Collect all definition nodes whose name capture matches the requested symbol.
     found = []
     for _pattern_index, captures in matches:
         name_nodes = captures.get("name", [])
