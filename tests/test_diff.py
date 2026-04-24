@@ -91,9 +91,11 @@ def test_root_commit_fallback_on_git_error(tmp_path: Path) -> None:
 
 def test_git_error_subclass_propagates_from_line_range_mode(tmp_path: Path) -> None:
     """GitError subclasses (e.g. GitTimeoutError) on the -L path must not be swallowed."""
-    with patch("why.diff.run_git", side_effect=GitTimeoutError("timed out")):
-        with pytest.raises(GitTimeoutError):
-            get_commit_diff("abc1234", Path("f.py"), line_range=(1, 5), repo=tmp_path)
+    with (
+        patch("why.diff.run_git", side_effect=GitTimeoutError("timed out")),
+        pytest.raises(GitTimeoutError),
+    ):
+        get_commit_diff("abc1234", Path("f.py"), line_range=(1, 5), repo=tmp_path)
 
 
 # ---------------------------------------------------------------------------
