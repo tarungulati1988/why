@@ -10,7 +10,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 import groq as groq_sdk
 
@@ -120,7 +120,8 @@ class LLMClient:
         verbose:  When True, log token usage at DEBUG level via "why.llm".
         """
         # Build the messages payload once; reused for every attempt.
-        payload = [
+        # Typed as list[Any] to satisfy the Groq SDK's union message param type.
+        payload: list[Any] = [
             {"role": "system", "content": system},
             *[{"role": m.role, "content": m.content} for m in messages],
         ]
