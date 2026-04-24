@@ -1,4 +1,4 @@
-"""Tests for why.history: get_file_history and get_line_history."""
+"""Tests for why.history: get_file_history, get_line_history, and find_introduction."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import pytest
 from conftest import _tmp_path_is_clean, make_git_runner
 
 from why.git import GitError
-from why.history import get_file_history, get_line_history
+from why.history import find_introduction, get_file_history, get_line_history
 
 # ---------------------------------------------------------------------------
 # Unit tests — run_git and parse_porcelain are mocked
@@ -346,3 +346,93 @@ class TestLineHistoryIntegration:
         )
         assert commits[0].subject == "C: finalize line 1"
         assert commits[2].subject == "A: create foo.py"
+
+
+# ---------------------------------------------------------------------------
+# find_introduction — unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestFindIntroductionArgs:
+    """Verify find_introduction builds the correct git args."""
+
+    def test_args_contain_diff_filter_A(self) -> None:
+        """--diff-filter=A must appear in args forwarded to run_git."""
+        fake_repo = Path("/fake/repo")
+        target_file = fake_repo / "foo.py"
+
+        with (
+            patch("why.history.run_git", return_value="raw") as mock_run_git,
+            patch("why.history.parse_porcelain", return_value=[MagicMock()]),
+        ):
+            find_introduction(target_file, fake_repo)
+
+        args_passed = mock_run_git.call_args.args[0]
+        assert "--diff-filter=A" in args_passed
+
+    def test_args_contain_follow(self) -> None:
+        """--follow must appear in args."""
+        fake_repo = Path("/fake/repo")
+        target_file = fake_repo / "foo.py"
+
+        with (
+            patch("why.history.run_git", return_value="raw") as mock_run_git,
+            patch("why.history.parse_porcelain", return_value=[MagicMock()]),
+        ):
+            find_introduction(target_file, fake_repo)
+
+        args_passed = mock_run_git.call_args.args[0]
+        assert "--follow" in args_passed
+
+    def test_empty_output_returns_none(self) -> None:
+        """Empty git output must return None without calling parse_porcelain."""
+        fake_repo = Path("/fake/repo")
+        target_file = fake_repo / "foo.py"
+
+        with (
+            patch("why.history.run_git", return_value="  "),
+            patch("why.history.parse_porcelain") as mock_parse,
+        ):
+            result = find_introduction(target_file, fake_repo)
+
+        assert result is None
+        mock_parse.assert_not_called()
+
+    def test_returns_oldest_commit_when_multiple_returned(self) -> None:
+        """When parse_porcelain returns multiple commits, the oldest (last) is returned."""
+        fake_repo = Path("/fake/repo")
+        target_file = fake_repo / "foo.py"
+        older = MagicMock(name="older_commit")
+        newer = MagicMock(name="newer_commit")
+        # parse_porcelain returns newest-first, so newer is index 0, older is index -1
+        mock_commits = [newer, older]
+
+        with (
+            patch("why.history.run_git", return_value="raw"),
+            patch("why.history.parse_porcelain", return_value=mock_commits),
+        ):
+            result = find_introduction(target_file, fake_repo)
+
+        assert result is older
+
+
+# ---------------------------------------------------------------------------
+# find_introduction — integration tests
+# ---------------------------------------------------------------------------
+
+
+class TestFindIntroductionIntegration:
+    """Integration: find_introduction runs real git and identifies the correct commit."""
+
+    def test_introduction_of_renamed_file_is_commit_A(self, renamed_repo: Path) -> None:
+        """new_name.py was introduced as old_name.py in commit A — must return commit A."""
+        # renamed_repo history: A creates old_name.py, B renames it to new_name.py, C edits it
+        commit = find_introduction(renamed_repo / "new_name.py", renamed_repo)
+        assert commit is not None
+        assert commit.subject == "A: create old_name.py and other.py"
+
+    def test_untracked_file_returns_none(self, renamed_repo: Path) -> None:
+        """A file with no git history must return None."""
+        ghost = renamed_repo / "never_committed.py"
+        result = find_introduction(ghost, renamed_repo)
+        assert result is None
