@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
 from why.commit import Commit
-from why.scoring import score_commit, _JUNK_PENALTY
+from why.scoring import score_commit
 
 # ---------------------------------------------------------------------------
 # Helper factory — builds a Commit with sensible defaults, all fields
 # overridable through keyword arguments.
 # ---------------------------------------------------------------------------
 
-_BASE_DATE = datetime(2024, 6, 1, tzinfo=timezone.utc)
+_BASE_DATE = datetime(2024, 6, 1, tzinfo=UTC)
 NOW = date(2024, 6, 1)
 
 
@@ -135,7 +135,7 @@ _CANONICAL = [
 
 
 @pytest.mark.parametrize(
-    "higher_label,lower_label",
+    ("higher_label", "lower_label"),
     [
         ("security+pr", "fix+no_pr"),
         ("fix+no_pr", "junk_chore"),
