@@ -2,7 +2,7 @@
 
 > git blame tells you who. `why` tells you why.
 
-**Status:** early scaffolding — no functionality yet.
+**Status:** M1 in progress — CLI and synthesis pipeline wired.
 
 `why` is a CLI that explains why code is the way it is by mining git history and PR metadata, then synthesizing it with an LLM.
 
@@ -12,16 +12,48 @@ See the full design: [`docs/design/why-idea-04-18-2026-1.0.0.md`](docs/design/wh
 
 Not yet published to PyPI. For now, install from source — see Development below.
 
-## Running
+## Usage
 
-Once installed (see Development), `why` is available as a CLI:
+### Prerequisites
+
+Set your Groq API key (default LLM backend):
 
 ```bash
-why --version
+export GROQ_API_KEY=your_key_here
 ```
 
-No analysis commands yet — the CLI is a stub. See the design doc linked
-above for the planned surface.
+By default `why` uses Groq as the LLM provider. The active provider is controlled by `WHY_LLM_PROVIDER` (default: `groq`). Currently only `groq` is supported — other providers are planned.
+
+### Analyse a file
+
+```bash
+why src/auth/middleware.py
+```
+
+### Narrow to a line
+
+```bash
+why src/auth/middleware.py:42
+```
+
+### Narrow to a symbol
+
+```bash
+why src/auth/middleware.py handle_session_timeout
+```
+
+### Override the model
+
+```bash
+why --model llama-3.1-8b-instant src/auth/middleware.py
+```
+
+### Get help
+
+```bash
+why --help          # full reference with argument descriptions
+why --version       # print version and exit
+```
 
 ## Development
 
