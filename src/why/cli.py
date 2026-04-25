@@ -11,7 +11,6 @@ from why.llm import LLMClient, LLMError
 from why.synth import synthesize_why
 from why.target import TargetError, parse_target
 
-
 # \b is a Click magic marker that disables paragraph re-wrapping for this block,
 # preserving the indented formatting exactly as written.
 _EPILOG = """\
