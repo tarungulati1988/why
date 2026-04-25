@@ -439,7 +439,7 @@ class TestSynthesizeWhySparseHistoryOrdering:
             sha="new0" * 10,
             author_name="Alice",
             author_email="alice@example.com",
-            date=datetime(2024, 6, 1, tzinfo=timezone.utc),
+            date=datetime(2024, 6, 1, tzinfo=timezone.utc),  # noqa: UP017
             subject="newer commit",
             body="",
             parents=(),
@@ -448,7 +448,7 @@ class TestSynthesizeWhySparseHistoryOrdering:
             sha="old0" * 10,
             author_name="Alice",
             author_email="alice@example.com",
-            date=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            date=datetime(2024, 1, 1, tzinfo=timezone.utc),  # noqa: UP017
             subject="older commit",
             body="",
             parents=(),
@@ -571,8 +571,6 @@ class TestBuildWhyPromptCurrentCodeEscaping:
     """Triple backticks in current_code must be escaped in the output."""
 
     def test_current_code_triple_backticks_are_escaped(self) -> None:
-        from datetime import UTC, datetime
-
         from why.prompts import build_why_prompt
         from why.target import Target
 

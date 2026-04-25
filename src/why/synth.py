@@ -11,7 +11,7 @@ from why.history import get_file_history, get_line_history
 from why.llm import LLMClient
 from why.prompts import WHY_SYSTEM_PROMPT, CommitWithPR, build_why_prompt
 from why.scoring import select_key_commits
-from why.symbols import find_symbol_range, SymbolNotFoundError
+from why.symbols import SymbolNotFoundError, find_symbol_range
 from why.target import Target
 
 _log = logging.getLogger(__name__)
