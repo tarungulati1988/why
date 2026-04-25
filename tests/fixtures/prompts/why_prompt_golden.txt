@@ -1,0 +1,32 @@
+## Target
+
+File: `src/why/scoring.py`, Line: 42
+
+---
+
+## Current Code
+
+```python
+def score_commit(c: Commit, now: date, has_pr: bool) -> float:
+    return 0.0
+```
+
+---
+
+## Commits
+
+### `abc1234` — "fix: handle null token in auth check" · 2026-01-15 · Jane Smith
+
+**Diff:**
+
+```diff
+(no diff available)
+```
+
+**PR Body:**
+
+```text
+Fixes #99: adds null check
+```
+
+---
