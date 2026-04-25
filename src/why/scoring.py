@@ -56,6 +56,7 @@ very recent, zero-line commit should still score above zero).
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from datetime import date
 from math import log
 
@@ -188,7 +189,7 @@ def score_commit(c: Commit, now: date, has_pr: bool) -> float:
 
 def select_key_commits(
     commits: list[Commit],
-    prs: dict[str, object],  # SHA -> PR object; only membership (sha in prs) is checked
+    prs: Mapping[str, object],  # SHA -> PR object; only membership (sha in prs) is checked
     n: int = 5,
     now: date | None = None,
 ) -> list[Commit]:
