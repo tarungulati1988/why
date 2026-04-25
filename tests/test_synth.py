@@ -582,3 +582,130 @@ class TestBuildWhyPromptCurrentCodeEscaping:
 
         assert "\\`\\`\\`" in content
         assert 'def foo():' in content
+
+
+# ---------------------------------------------------------------------------
+# Citation validation integration tests
+# ---------------------------------------------------------------------------
+
+_PATCH_VALIDATE_CITATIONS = "why.synth.validate_citations"
+_PATCH_LOG = "why.synth._log"
+
+
+class TestSynthesizeWhyCitationLogging:
+    """When LLM output contains an unknown SHA, validate_citations issues are logged."""
+
+    def test_synthesize_why_logs_citation_issues(self, tmp_path: Path) -> None:
+        from why.citations import ValidationIssue
+
+        # A known SHA for the single commit in history
+        known_sha = "aaabbb1234567890abcdef1234567890abcd1234"
+        # An unknown 7-char hex SHA the LLM hallucinated
+        unknown_sha = "dead123"
+
+        commits = [_make_commit(known_sha)]
+        f = _make_py_file(tmp_path, "foo.py", "x = 1\n")
+        target = Target(file=f)
+        llm = MagicMock()
+        # LLM output mentions an unknown SHA
+        llm.complete.return_value = f"This was changed in {unknown_sha} for reasons."
+
+        fake_issue = ValidationIssue(
+            kind="unknown_sha",
+            value=unknown_sha,
+            output_line=f"This was changed in {unknown_sha} for reasons.",
+        )
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT),
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, return_value=[MagicMock()]),
+            patch(_PATCH_VALIDATE_CITATIONS, return_value=[fake_issue]) as mock_validate,
+            patch(_PATCH_LOG) as mock_log,
+        ):
+            result = synthesize_why(target, tmp_path, llm)
+
+        # validate_citations must be called with the LLM output and the known SHA set
+        mock_validate.assert_called_once()
+        call_args = mock_validate.call_args
+        assert call_args.args[0] == llm.complete.return_value
+        assert known_sha in call_args.args[1]  # known_shas contains the commit SHA
+        assert call_args.kwargs.get("known_prs") == set() or call_args.args[2] == set()
+
+        # _log.warning must have been called for the citation issue;
+        # synth.py strips non-printable chars from value before logging.
+        safe_value = "".join(c for c in fake_issue.value if c.isprintable())
+        mock_log.warning.assert_called_with(
+            "citation issue %s: %s", fake_issue.kind, safe_value
+        )
+
+        # Result is still the raw LLM output — issues are logged, not filtered
+        assert result == llm.complete.return_value
+
+    def test_synthesize_why_no_issues_no_warnings(self, tmp_path: Path) -> None:
+        """When LLM output contains only known SHAs, no citation warnings are logged."""
+        known_sha = "aaabbb1234567890abcdef1234567890abcd1234"
+
+        commits = [_make_commit(known_sha)]
+        f = _make_py_file(tmp_path, "foo.py", "x = 1\n")
+        target = Target(file=f)
+        llm = MagicMock()
+        # LLM output only mentions the known SHA (short form)
+        llm.complete.return_value = f"Changed in {known_sha[:7]} to fix a bug."
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT),
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, return_value=[MagicMock()]),
+            patch(_PATCH_VALIDATE_CITATIONS, return_value=[]) as mock_validate,
+            patch(_PATCH_LOG) as mock_log,
+        ):
+            synthesize_why(target, tmp_path, llm)
+
+        # validate_citations called but returned no issues — no citation warnings
+        mock_validate.assert_called_once()
+        # Ensure _log.warning was NOT called with the citation issue pattern
+        for call in mock_log.warning.call_args_list:
+            assert call.args[0] != "citation issue %s: %s", (
+                "Expected no citation warnings, but one was logged"
+            )
+
+
+class TestSynthesizeWhyStrictMode:
+    """When strict=True and LLM output contains an unknown SHA, ValueError is raised."""
+
+    def test_synthesize_why_strict_raises_on_hallucinated_sha(self, tmp_path: Path) -> None:
+        known_sha = "cccddd1234567890abcdef1234567890abcd1234"
+
+        commits = [_make_commit(known_sha)]
+        f = _make_py_file(tmp_path, "foo.py", "x = 1\n")
+        target = Target(file=f)
+        llm = MagicMock()
+        llm.complete.return_value = "Blame some SHA for this."
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT),
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, return_value=[MagicMock()]),
+            # Mock validate_citations to raise — tests that synthesize_why propagates it.
+            patch(
+                _PATCH_VALIDATE_CITATIONS,
+                side_effect=ValueError("citation validation failed: 1 issues"),
+            ) as mock_validate,
+        ):
+            import pytest
+            with pytest.raises(ValueError):
+                synthesize_why(target, tmp_path, llm, strict=True)
+
+        # Confirm strict=True was forwarded to validate_citations as a keyword argument.
+        mock_validate.assert_called_once()
+        assert mock_validate.call_args.kwargs.get("strict") is True

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from why.citations import validate_citations
 from why.diff import get_commit_diff
 from why.git import GitError
 from why.history import get_file_history, get_line_history
@@ -73,6 +74,7 @@ def synthesize_why(
     repo: Path,
     llm: LLMClient,
     prs: dict[str, str] | None = None,
+    strict: bool = False,
 ) -> str:
     """Orchestrate the full why pipeline and return the LLM's explanation.
 
@@ -131,4 +133,17 @@ def synthesize_why(
     ]
 
     messages = build_why_prompt(target, current_code, commits_with_prs)
-    return llm.complete(WHY_SYSTEM_PROMPT, messages)
+    result = llm.complete(WHY_SYSTEM_PROMPT, messages)
+
+    # Post-process: validate every SHA mentioned in the LLM output against the
+    # set of SHAs we actually provided in context.  PR numbers aren't available
+    # from the prs dict (it maps sha → body), so pass an empty set for now.
+    known_shas = {c.sha for c in key_commits}
+    issues = validate_citations(result, known_shas, known_prs=set(), strict=strict)
+    for issue in issues:
+        # Strip non-printable characters from issue.value before logging to
+        # prevent control codes or ANSI escapes from polluting log output.
+        safe_value = "".join(c for c in issue.value if c.isprintable())
+        _log.warning("citation issue %s: %s", issue.kind, safe_value)
+
+    return result
