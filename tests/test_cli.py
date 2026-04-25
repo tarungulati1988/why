@@ -105,3 +105,23 @@ def test_llm_error_exits_1(existing_file: Path) -> None:
 
     assert result.exit_code == 1
     assert "Error:" in result.output
+
+
+def test_short_help_flag() -> None:
+    """-h is an alias for --help: exits 0 and shows the same content."""
+    result = CliRunner().invoke(main, ["-h"])
+    assert result.exit_code == 0
+    assert "TARGET" in result.output
+    assert "--model" in result.output
+
+
+def test_no_args_shows_help() -> None:
+    """Invoking why with no arguments prints help.
+
+    Click's no_args_is_help=True raises NoArgsIsHelpError (a UsageError subclass)
+    which exits with code 2, not 0. The help text is still shown to the user.
+    """
+    result = CliRunner().invoke(main, [])
+    # Click's no_args_is_help always exits 2 (UsageError), not 0
+    assert result.exit_code == 2
+    assert "TARGET" in result.output

@@ -23,7 +23,11 @@ ARGUMENTS:
             MyClass.method      method-scoped analysis
 """
 
-@click.command(epilog=_EPILOG)
+@click.command(
+    epilog=_EPILOG,
+    no_args_is_help=True,  # bare invocation exits 2 (Click UsageError), not 0
+    context_settings={"help_option_names": ["-h", "--help"]},
+)
 @click.version_option(__version__, prog_name="why")
 @click.argument("target_spec", metavar="TARGET")
 @click.argument("extra", required=False, metavar="SYMBOL")
