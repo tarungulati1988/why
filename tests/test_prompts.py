@@ -5,21 +5,19 @@ Fixed, deterministic test data; no datetime.now() calls.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-
-import pytest
 
 from why.commit import Commit
 from why.llm import Message
-from why.prompts import CommitWithPR, WHY_SYSTEM_PROMPT, build_why_prompt
+from why.prompts import WHY_SYSTEM_PROMPT, CommitWithPR, build_why_prompt
 from why.target import Target
 
 # ---------------------------------------------------------------------------
 # Deterministic test fixtures
 # ---------------------------------------------------------------------------
 
-FIXED_DATE = datetime(2026, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+FIXED_DATE = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
 FIXED_COMMIT = Commit(
     sha="abc1234def5678901234567890",
     author_name="Jane Smith",
@@ -63,7 +61,7 @@ def test_returns_single_user_message() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 2–4: target rendering variants
+# Test 2-4: target rendering variants
 # ---------------------------------------------------------------------------
 
 
@@ -95,7 +93,7 @@ def test_target_with_symbol() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 5–6: commit rendering — SHA and date
+# Test 5-6: commit rendering - SHA and date
 # ---------------------------------------------------------------------------
 
 
@@ -116,7 +114,7 @@ def test_commit_date_format() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 7–8: PR body presence / absence
+# Test 7-8: PR body presence / absence
 # ---------------------------------------------------------------------------
 
 
@@ -229,7 +227,7 @@ def test_newline_in_subject_is_stripped() -> None:
     result = build_why_prompt(FIXED_TARGET, FIXED_CURRENT_CODE, [cwpr])
     content = result[0].content
     # The injected newline must be replaced — no raw newline in the ### header line
-    header_line = [ln for ln in content.splitlines() if ln.startswith("### `abc1234`")][0]
+    header_line = next(ln for ln in content.splitlines() if ln.startswith("### `abc1234`"))
     assert "\n" not in header_line
     # "## Injected Section" must NOT appear as a standalone Markdown heading line —
     # it should be inlined into the header text after the newline was stripped to a space

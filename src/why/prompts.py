@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
 
 from why.commit import Commit
 from why.llm import Message
@@ -113,7 +112,7 @@ Decision Rules (apply strictly):
 - Low → no explicit reasoning OR mostly inferred
 
 Justification:
-- <1–2 lines>
+- <1-2 lines>
 
 Primary Limitation:
 - <single biggest issue affecting confidence>
