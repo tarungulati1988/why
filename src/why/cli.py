@@ -12,7 +12,19 @@ from why.synth import synthesize_why
 from why.target import TargetError, parse_target
 
 
-@click.command()
+# \b is a Click magic marker that disables paragraph re-wrapping for this block,
+# preserving the indented formatting exactly as written.
+_EPILOG = """\
+\b
+ARGUMENTS:
+  TARGET  File path, optionally narrowed to a line or symbol:
+            src/foo.py          whole-file analysis
+            src/foo.py:42       line-scoped analysis
+  SYMBOL  Symbol name to narrow analysis (optional):
+            MyClass.method      method-scoped analysis
+"""
+
+@click.command(epilog=_EPILOG)
 @click.version_option(__version__, prog_name="why")
 @click.argument("target_spec", metavar="TARGET")
 @click.argument("extra", required=False, metavar="SYMBOL")
@@ -23,11 +35,7 @@ from why.target import TargetError, parse_target
     help="LLM model to use.",
 )
 def main(target_spec: str, extra: str | None, model: str) -> None:
-    """Explain why code is the way it is via git history and LLM synthesis.
-
-    TARGET is a file path, optionally narrowed to a line number (src/foo.py:42)
-    or followed by a SYMBOL name (src/foo.py MyClass.method).
-    """
+    """Explain why code is the way it is via git history and LLM synthesis."""
     cwd = Path.cwd()
 
     try:

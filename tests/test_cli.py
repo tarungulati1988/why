@@ -30,12 +30,14 @@ def existing_file(tmp_path: Path) -> Path:
 
 
 def test_help_flag() -> None:
-    """--help exits 0 and documents TARGET, SYMBOL, and --model."""
+    """--help exits 0 and documents TARGET, SYMBOL, --model, and argument descriptions."""
     result = CliRunner().invoke(main, ["--help"])
     assert result.exit_code == 0
     assert "TARGET" in result.output
     assert "SYMBOL" in result.output
     assert "--model" in result.output
+    assert "ARGUMENTS:" in result.output
+    assert "whole-file analysis" in result.output
 
 
 def test_happy_path(existing_file: Path) -> None:
