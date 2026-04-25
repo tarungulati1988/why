@@ -7,6 +7,19 @@ import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
+import pytest
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Register the --update-goldens flag for regenerating golden files."""
+    parser.addoption("--update-goldens", action="store_true", default=False)
+
+
+@pytest.fixture
+def update_goldens(request: pytest.FixtureRequest) -> bool:
+    """Return True when --update-goldens was passed on the command line."""
+    return bool(request.config.getoption("--update-goldens"))
+
 
 def _tmp_path_is_clean(tmp_path: Path) -> bool:
     """Return True if tmp_path is NOT inside an existing git repo.
