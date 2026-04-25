@@ -209,9 +209,10 @@ def _render_commit(cwpr: CommitWithPR) -> str:
     # Escape triple backticks in diff content to prevent premature fence closure
     safe_diff = diff_text.replace("```", "\\`\\`\\`")
 
-    # Wrap pr_body in a ```text fence to prevent raw Markdown injection from PR descriptions.
+    # Escape triple backticks in pr_body to prevent premature text-fence closure.
     # Both None and "" fall through to "N/A".
-    pr_section = f"```text\n{cwpr.pr_body}\n```" if cwpr.pr_body else "N/A"
+    safe_pr_body = cwpr.pr_body.replace("```", "\\`\\`\\`") if cwpr.pr_body else None
+    pr_section = f"```text\n{safe_pr_body}\n```" if safe_pr_body else "N/A"
 
     return (
         f'### `{commit.short_sha}` — "{safe_subject}" · {date_str} · {safe_author}\n'
@@ -249,7 +250,8 @@ def build_why_prompt(
     """
     target_section = _render_target(target)
 
-    code_section = f"## Current Code\n\n```python\n{current_code}\n```"
+    safe_current_code = current_code.replace("```", "\\`\\`\\`")
+    code_section = f"## Current Code\n\n```python\n{safe_current_code}\n```"
 
     # Build commit sub-sections unconditionally; join is empty string when no commits
     commits_body = "\n\n".join(_render_commit(cwpr) for cwpr in key_commits)
