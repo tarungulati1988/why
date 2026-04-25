@@ -703,7 +703,7 @@ class TestSynthesizeWhyStrictMode:
             ) as mock_validate,
         ):
             import pytest
-            with pytest.raises(ValueError):
+            with pytest.raises(ValueError, match="citation validation failed"):
                 synthesize_why(target, tmp_path, llm, strict=True)
 
         # Confirm strict=True was forwarded to validate_citations as a keyword argument.

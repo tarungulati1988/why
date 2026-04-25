@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from why.citations import ValidationIssue, validate_citations
+from why.citations import validate_citations
 
 # ---------------------------------------------------------------------------
 # Shared golden fixtures
@@ -101,7 +101,7 @@ def test_prefix_sha_not_flagged() -> None:
 
 
 def test_full_sha_prefix_of_short_known_sha_not_flagged() -> None:
-    """Bidirectional: if known set contains a short SHA and output has longer prefix, not flagged."""
+    """Bidirectional: known set has short SHA, output has longer prefix — not flagged."""
     short_known = KNOWN_SHA_FULL[:8]  # e.g. "a3f8c1d2"
     output = f"Commit {KNOWN_SHA_FULL} landed here."
     # known_shas holds only the short version; full SHA startswith short → valid
