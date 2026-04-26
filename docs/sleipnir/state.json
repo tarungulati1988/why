@@ -1,12 +1,12 @@
 {
-  "branch": "sleipnir/issue-72-two-pass-synthesis",
+  "branch": "sleipnir/issue-29-brief-flag",
   "base_ref": "origin/main",
-  "base_sha": "97850fc7ea79c57d83ec5873ecaf2983ea9e5537",
-  "merge_base": "97850fc7ea79c57d83ec5873ecaf2983ea9e5537",
+  "base_sha": "036fd40",
+  "merge_base": "036fd40",
   "dirty_files": [],
   "included_files": [],
   "excluded_files": [".python-version"],
-  "issue": 72,
-  "design_doc": "docs/designs/2026-04-25-two-pass-synthesis-design.md",
+  "issue": 29,
+  "design_doc": "docs/designs/2026-04-25-brief-flag-design.md",
   "phase": "execution"
 }

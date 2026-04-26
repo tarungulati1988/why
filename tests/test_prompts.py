@@ -509,3 +509,37 @@ def test_build_grounding_prompt_with_empty_commits() -> None:
     assert isinstance(result, list)
     assert len(result) == 1
     assert result[0].role == "user"
+
+
+# ---------------------------------------------------------------------------
+# --brief flag tests (Stride 1 of Issue #29)
+# ---------------------------------------------------------------------------
+
+
+def test_build_why_prompt_brief_appends_tail() -> None:
+    """When brief=True, message content contains the brief-mode summary instruction."""
+    commits = [CommitWithPR(commit=FIXED_COMMIT)]
+    result = build_why_prompt(FIXED_TARGET, FIXED_CURRENT_CODE, commits, brief=True)
+    assert "Output ONLY a 3-sentence summary" in result[0].content
+
+
+def test_build_why_prompt_brief_tail_exact_text() -> None:
+    """When brief=True, the exact tail string must appear verbatim in message content."""
+    commits = [CommitWithPR(commit=FIXED_COMMIT)]
+    result = build_why_prompt(FIXED_TARGET, FIXED_CURRENT_CODE, commits, brief=True)
+    assert "Output ONLY a 3-sentence summary." in result[0].content
+    assert "No sections, no citations block (inline only)." in result[0].content
+
+
+def test_build_why_prompt_no_brief_omits_tail() -> None:
+    """When brief=False (default), content must NOT contain the brief-mode instruction."""
+    commits = [CommitWithPR(commit=FIXED_COMMIT)]
+    result = build_why_prompt(FIXED_TARGET, FIXED_CURRENT_CODE, commits)
+    assert "Output ONLY a 3-sentence summary" not in result[0].content
+
+
+def test_build_why_prompt_brief_section_header() -> None:
+    """When brief=True, content must contain the '## Output Format' section header."""
+    commits = [CommitWithPR(commit=FIXED_COMMIT)]
+    result = build_why_prompt(FIXED_TARGET, FIXED_CURRENT_CODE, commits, brief=True)
+    assert "## Output Format" in result[0].content

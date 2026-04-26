@@ -48,6 +48,18 @@ why src/auth/middleware.py handle_session_timeout
 why --model llama-3.1-8b-instant src/auth/middleware.py
 ```
 
+### Get a 3-sentence summary
+
+```bash
+why --brief src/auth/middleware.py        # concise mode: one paragraph
+```
+
+### Verify claim grounding (two-pass)
+
+```bash
+why --verify src/auth/middleware.py       # second LLM call checks intent claims
+```
+
 ### Disable color / pipe-friendly output
 
 ```bash

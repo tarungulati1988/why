@@ -134,6 +134,7 @@ def synthesize_why(
     prs: dict[str, str] | None = None,
     strict: bool = False,
     two_pass: bool = False,
+    brief: bool = False,
 ) -> str:
     """Orchestrate the full why pipeline and return the LLM's explanation.
 
@@ -191,7 +192,7 @@ def synthesize_why(
         for c in key_commits
     ]
 
-    messages = build_why_prompt(target, current_code, commits_with_prs)
+    messages = build_why_prompt(target, current_code, commits_with_prs, brief=brief)
     repo_url = _get_repo_url(repo)
     result = llm.complete(build_system_prompt(repo_url), messages)
 

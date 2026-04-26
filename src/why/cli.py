@@ -50,7 +50,20 @@ ARGUMENTS:
         "Adds ~1 LLM call of latency and cost."
     ),
 )
-def main(target_spec: str, extra: str | None, model: str, no_color: bool, verify: bool) -> None:
+@click.option(
+    "--brief",
+    is_flag=True,
+    default=False,
+    help="Emit a 3-sentence summary instead of the full narrative.",
+)
+def main(
+    target_spec: str,
+    extra: str | None,
+    model: str,
+    no_color: bool,
+    verify: bool,
+    brief: bool,
+) -> None:
     """Explain why code is the way it is via git history and LLM synthesis."""
     cwd = Path.cwd()
 
@@ -62,7 +75,7 @@ def main(target_spec: str, extra: str | None, model: str, no_color: bool, verify
 
     try:
         llm = LLMClient(model)
-        output = synthesize_why(target, cwd, llm, two_pass=verify)
+        output = synthesize_why(target, cwd, llm, two_pass=verify, brief=brief)
     except (LLMError, GitError, SymbolNotFoundError) as exc:
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
