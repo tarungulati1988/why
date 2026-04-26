@@ -35,6 +35,26 @@ def _tmp_path_is_clean(tmp_path: Path) -> bool:
     return result.returncode != 0
 
 
+def init_git_main_branch(git_runner: Callable[..., None]) -> None:
+    """Init a git repo on branch 'main', handling git < 2.28.
+
+    git 2.28 introduced the -b flag for `git init`; older versions require a
+    separate `symbolic-ref` call to rename the default branch to main.
+    """
+    import subprocess as _sp
+
+    ver_out = _sp.run(
+        ["git", "--version"], capture_output=True, text=True, check=True
+    ).stdout
+    # "git version 2.39.2" → (2, 39)
+    major, minor = (int(x) for x in ver_out.split()[2].split(".")[:2])
+    if (major, minor) >= (2, 28):
+        git_runner("init", "-b", "main")
+    else:
+        git_runner("init")
+        git_runner("symbolic-ref", "HEAD", "refs/heads/main")
+
+
 def make_git_runner(repo: Path) -> Callable[..., None]:
     """Return a git() callable pre-configured for repo with test env vars.
 

@@ -8,6 +8,7 @@ import click
 from why import __version__
 from why.git import GitError
 from why.llm import LLMClient, LLMError
+from why.symbols import SymbolNotFoundError
 from why.synth import synthesize_why
 from why.target import TargetError, parse_target
 
@@ -50,7 +51,7 @@ def main(target_spec: str, extra: str | None, model: str) -> None:
     try:
         llm = LLMClient(model)
         output = synthesize_why(target, cwd, llm)
-    except (LLMError, GitError) as exc:
+    except (LLMError, GitError, SymbolNotFoundError) as exc:
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
 
