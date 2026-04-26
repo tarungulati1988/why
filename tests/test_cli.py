@@ -239,4 +239,6 @@ class TestLineTargetEndToEnd:
         # catching regressions where the pipeline passes an empty or wrong prompt.
         call_args = mock_llm_instance.complete.call_args
         messages = call_args.args[1]
-        assert any("foo.py" in str(m) for m in messages), "LLM messages should reference the target file"
+        assert any("foo.py" in str(m) for m in messages), (
+            "LLM messages should reference the target file"
+        )
