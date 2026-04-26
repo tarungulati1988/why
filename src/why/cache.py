@@ -8,6 +8,7 @@ import os
 import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from why.prompts import PRMetadata
 
@@ -59,14 +60,15 @@ class PRCache:
         }
         self._save(data)
 
-    def _load(self) -> dict:
+    def _load(self) -> dict[str, Any]:
         """Load cache JSON from disk. Returns {} on missing or corrupt file."""
         try:
-            return json.loads(self.path.read_text())
+            result: dict[str, Any] = json.loads(self.path.read_text())
+            return result
         except (FileNotFoundError, json.JSONDecodeError, OSError):
             return {}
 
-    def _save(self, data: dict) -> None:
+    def _save(self, data: dict[str, Any]) -> None:
         """Write cache JSON to disk atomically (write tmp → rename)."""
         dir_ = self.path.parent
         fd, tmp_path = tempfile.mkstemp(dir=dir_, suffix=".tmp")
@@ -79,7 +81,7 @@ class PRCache:
                 os.unlink(tmp_path)
             raise
 
-    def _is_expired(self, entry: dict) -> bool:
+    def _is_expired(self, entry: dict[str, Any]) -> bool:
         """Return True if entry's cached_at is >30 days ago."""
         try:
             cached_at = datetime.fromisoformat(entry["cached_at"])
