@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import tempfile
@@ -74,11 +75,8 @@ class PRCache:
                 json.dump(data, f, indent=2)
             os.replace(tmp_path, self.path)
         except Exception:
-            # Clean up temp file on failure
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp_path)
-            except OSError:
-                pass
             raise
 
     def _is_expired(self, entry: dict) -> bool:

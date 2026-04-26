@@ -336,7 +336,9 @@ class TestSynthesizeWhyPRBodyWiring:
         sha_c = "ccc0" * 10
         commits = [_make_commit(sha_a), _make_commit(sha_b), _make_commit(sha_c)]
         # Only sha_a has a PR; sha_b and sha_c do not
-        prs: dict[str, PRMetadata] = {sha_a: PRMetadata(number=42, title="PR title for A", body="PR body for A")}
+        prs: dict[str, PRMetadata] = {
+            sha_a: PRMetadata(number=42, title="PR title for A", body="PR body for A")
+        }
         f = _make_py_file(tmp_path, "foo.py", "x = 1\n")
         target = Target(file=f)
         llm = MagicMock()
@@ -680,7 +682,10 @@ class TestRenderCommitPRBodyEscaping:
             body="",
             parents=(),
         )
-        cwpr = CommitWithPR(commit=commit, pr_number=1, pr_title="Backtick test", pr_body="look at this ```code block```")
+        cwpr = CommitWithPR(
+            commit=commit, pr_number=1, pr_title="Backtick test",
+            pr_body="look at this ```code block```",
+        )
         target = Target(file=Path("src/foo.py"))
 
         result = build_why_prompt(target, "x = 1", [cwpr])
@@ -1398,7 +1403,6 @@ class TestSynthesizeWhyGitHubPRFetching:
         from why.prompts import PRMetadata
 
         commits, _f, target = self._make_setup(tmp_path, n=1)
-        sha = commits[0].sha
         mock_gh = MagicMock(spec=GitHubClient)
         mock_gh.get_prs_for_commit.return_value = [PRMetadata(42, "Fix bug", "pr body")]
 
@@ -1433,7 +1437,6 @@ class TestSynthesizeWhyGitHubPRFetching:
         from why.prompts import PRMetadata
 
         commits, _f, target = self._make_setup(tmp_path, n=1)
-        sha = commits[0].sha
         mock_gh = MagicMock(spec=GitHubClient)
         mock_cache = MagicMock(spec=PRCache)
         mock_cache.get.return_value = [PRMetadata(7, "Cached PR", "cached body")]

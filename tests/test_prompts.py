@@ -131,7 +131,10 @@ def test_commit_date_format() -> None:
 
 def test_pr_body_present() -> None:
     """When pr_number and pr_body are set, the content string must appear verbatim."""
-    commits = [CommitWithPR(commit=FIXED_COMMIT, pr_number=42, pr_title="Fix null check", pr_body="Fixes #99: adds null check")]
+    commits = [
+        CommitWithPR(commit=FIXED_COMMIT, pr_number=42, pr_title="Fix null check",
+                     pr_body="Fixes #99: adds null check")
+    ]
     result = build_why_prompt(FIXED_TARGET, FIXED_CURRENT_CODE, commits)
     assert "Fixes #99: adds null check" in result[0].content
 
@@ -182,7 +185,10 @@ def test_system_prompt_not_empty() -> None:
 
 def test_golden_file(update_goldens: bool) -> None:
     """Content must match the golden fixture exactly."""
-    commits = [CommitWithPR(commit=FIXED_COMMIT, pr_number=42, pr_title="Fix null check", pr_body="Fixes #99: adds null check")]
+    commits = [
+        CommitWithPR(commit=FIXED_COMMIT, pr_number=42, pr_title="Fix null check",
+                     pr_body="Fixes #99: adds null check")
+    ]
     result = build_why_prompt(FIXED_TARGET, FIXED_CURRENT_CODE, commits)
     content = result[0].content
     golden = Path(__file__).parent / "fixtures" / "prompts" / "why_prompt_golden.txt"
@@ -281,7 +287,7 @@ def test_pr_body_is_fenced() -> None:
 
 
 def test_pr_body_empty_string() -> None:
-    """When pr_number is present but pr_body is empty, the PR section still renders (with empty fence)."""
+    """When pr_number is present but pr_body is empty, the PR section still renders."""
     cwpr = CommitWithPR(commit=FIXED_COMMIT, pr_number=1, pr_title="Empty body PR", pr_body="")
     result = build_why_prompt(FIXED_TARGET, FIXED_CURRENT_CODE, [cwpr])
     # PR section should be present since pr_number is set

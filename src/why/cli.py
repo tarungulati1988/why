@@ -119,7 +119,8 @@ def main(
                 slug_owner = parts[-2]
                 slug_repo = parts[-1].removesuffix(".git")
                 # Guard against path traversal: reject slugs with ".." or path separators
-                if ".." not in slug_owner and ".." not in slug_repo and "/" not in slug_owner and "/" not in slug_repo:
+                safe = all(".." not in s and "/" not in s for s in (slug_owner, slug_repo))
+                if safe:
                     repo_slug = f"{slug_owner}__{slug_repo}"
                     pr_cache = PRCache(repo_slug)
 

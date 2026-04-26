@@ -5,7 +5,6 @@ Written BEFORE the implementation (TDD red phase).
 
 from __future__ import annotations
 
-import io
 import json
 from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError, URLError
@@ -14,7 +13,6 @@ import pytest
 
 from why.github import GitHubAuthError, GitHubClient, detect_github_token
 from why.prompts import PRMetadata
-
 
 # ---------------------------------------------------------------------------
 # Helpers
