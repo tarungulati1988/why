@@ -7,6 +7,8 @@ import subprocess
 import urllib.parse
 from pathlib import Path
 
+import click
+
 from why.citations import validate_citations
 from why.diff import get_commit_diff
 from why.git import GitError
@@ -28,6 +30,15 @@ _log = logging.getLogger(__name__)
 
 # Lines of context to include above and below a bare line target.
 _LINE_WINDOW = 20
+
+_COST_PER_1K_TOKENS = 0.0008  # llama-3.3-70b Groq approximate rate
+_DEEP_COST_WARN_THRESHOLD = 0.50
+
+
+def _estimate_prompt_cost(system: str, messages: list) -> float:
+    total_chars = len(system) + sum(len(m.content) for m in messages)
+    tokens = total_chars / 4
+    return (tokens / 1000) * _COST_PER_1K_TOKENS
 
 
 def _get_repo_url(repo: Path) -> str | None:
@@ -135,6 +146,8 @@ def synthesize_why(
     strict: bool = False,
     two_pass: bool = False,
     brief: bool = False,
+    deep: bool = False,
+    max_commits: int | None = None,
 ) -> str:
     """Orchestrate the full why pipeline and return the LLM's explanation.
 
@@ -169,8 +182,11 @@ def synthesize_why(
     if not history:
         return "file has no git history"
 
-    # Sparse path: too few commits to score meaningfully — use all of them.
-    key_commits = history if len(history) < 3 else select_key_commits(history, prs)
+    if deep:
+        capped = history[:max_commits] if max_commits is not None else history
+        key_commits = capped
+    else:
+        key_commits = history if len(history) < 3 else select_key_commits(history, prs)
 
     # Sort oldest-first so the LLM sees chronological order regardless of path.
     key_commits = sorted(key_commits, key=lambda c: c.date)
@@ -194,7 +210,19 @@ def synthesize_why(
 
     messages = build_why_prompt(target, current_code, commits_with_prs, brief=brief)
     repo_url = _get_repo_url(repo)
-    result = llm.complete(build_system_prompt(repo_url), messages)
+    system_prompt = build_system_prompt(repo_url)
+
+    if deep:
+        estimated_cost = _estimate_prompt_cost(system_prompt, messages)
+        if estimated_cost > _DEEP_COST_WARN_THRESHOLD:
+            click.echo(
+                f"Warning: --deep estimated cost ${estimated_cost:.2f} exceeds "
+                f"${_DEEP_COST_WARN_THRESHOLD:.2f} threshold "
+                f"(rate assumes {llm.model}; your actual cost may differ).",
+                err=True,
+            )
+
+    result = llm.complete(system_prompt, messages)
 
     # Post-process: validate every SHA mentioned in the LLM output against the
     # set of SHAs we actually provided in context.  PR numbers aren't available
