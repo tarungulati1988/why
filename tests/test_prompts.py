@@ -340,6 +340,12 @@ def test_system_prompt_structural_contract() -> None:
     assert "Sparse History Notice" in WHY_SYSTEM_PROMPT
     # The new prompt instructs code-structure analysis via naming conventions
     assert "naming conventions" in WHY_SYSTEM_PROMPT
+    # New voice guidance: prompt must mention emoji formatting
+    assert "emoji" in WHY_SYSTEM_PROMPT.lower()
+    # Decision-test: structural insights must require causal language (because / so that)
+    assert "because" in WHY_SYSTEM_PROMPT.lower()  # decision-test requires causal language
+    # Anti-drift directive: explicitly tell the LLM not to narrate what the code does
+    assert "do not describe what the code does" in WHY_SYSTEM_PROMPT.lower()
 
 
 # ---------------------------------------------------------------------------
