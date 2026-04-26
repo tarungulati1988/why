@@ -30,7 +30,7 @@ def _tmp_path_is_clean(tmp_path: Path) -> bool:
     """
     result = subprocess.run(
         ["git", "rev-parse", "--git-dir"],
-        cwd=tmp_path, capture_output=True, text=True, check=False,
+        cwd=tmp_path.resolve(), capture_output=True, text=True, check=False,
     )
     return result.returncode != 0
 
@@ -50,6 +50,10 @@ def make_git_runner(repo: Path) -> Callable[..., None]:
         "GIT_COMMITTER_NAME": "Test",
         "GIT_COMMITTER_EMAIL": "test@example.com",
         "GIT_TERMINAL_PROMPT": "0",
+        # Prevent git from reading /etc/gitconfig or ~/.gitconfig so host
+        # settings (e.g. gpgsign=true, custom hooks) can't affect test runs.
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "HOME": str(repo),
         # Match run_git's _HARDENING_ENV so fixture output is locale-stable
         # and never blocked by a pager.
         "LC_ALL": "C",
