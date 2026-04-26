@@ -68,6 +68,39 @@ wheels = [
 ]
 
 [[package]]
+name = "git-why"
+source = { editable = "." }
+dependencies = [
+    { name = "click" },
+    { name = "groq" },
+    { name = "rich" },
+    { name = "tree-sitter" },
+    { name = "tree-sitter-go" },
+    { name = "tree-sitter-python" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "click", specifier = ">=8.1" },
+    { name = "groq", specifier = ">=0.9" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
+    { name = "rich", specifier = ">=13" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
+    { name = "tree-sitter", specifier = ">=0.23" },
+    { name = "tree-sitter-go" },
+    { name = "tree-sitter-python" },
+]
+provides-extras = ["dev"]
+
+[[package]]
 name = "groq"
 version = "1.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -596,36 +629,3 @@ sdist = { url = "https://files.pythonhosted.org/packages/55/e3/70399cb7dd41c10ac
 wheels = [
     { url = "https://files.pythonhosted.org/packages/dc/9b/47798a6c91d8bdb567fe2698fe81e0c6b7cb7ef4d13da4114b41d239f65d/typing_inspection-0.4.2-py3-none-any.whl", hash = "sha256:4ed1cacbdc298c220f1bd249ed5287caa16f34d44ef4e9c3d0cbad5b521545e7", size = 14611, upload-time = "2025-10-01T02:14:40.154Z" },
 ]
-
-[[package]]
-name = "why"
-source = { editable = "." }
-dependencies = [
-    { name = "click" },
-    { name = "groq" },
-    { name = "rich" },
-    { name = "tree-sitter" },
-    { name = "tree-sitter-go" },
-    { name = "tree-sitter-python" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "click", specifier = ">=8.1" },
-    { name = "groq", specifier = ">=0.9" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
-    { name = "rich", specifier = ">=13" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
-    { name = "tree-sitter", specifier = ">=0.23" },
-    { name = "tree-sitter-go" },
-    { name = "tree-sitter-python" },
-]
-provides-extras = ["dev"]
