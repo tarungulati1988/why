@@ -8,7 +8,8 @@ from why.commit import Commit
 from why.llm import Message
 from why.target import Target
 
-# Inject the sparse-history notice when key_commits is strictly below this count (0–2 triggers; 3+ suppresses).
+# Inject the sparse-history notice when key_commits is strictly below this count
+# (0-2 triggers the notice; 3+ suppresses it).
 SPARSE_COMMIT_THRESHOLD: int = 3
 
 # ---------------------------------------------------------------------------
@@ -61,7 +62,8 @@ You will be given:
 - Every reason MUST be labeled:
   - [STATED] → explicitly written in commit/PR
   - [INFERRED] → deduced from diff patterns
-  - [STRUCTURAL] → deduced from code structure (naming, constants, separation of concerns, invariants, defensive patterns) — only valid when a Sparse History Notice is present
+  - [STRUCTURAL] → deduced from code structure (naming, constants, separation of concerns,
+    invariants, defensive patterns) — only valid when a Sparse History Notice is present
 - If a statement has no tag → DO NOT include it.
 
 3. NO HALLUCINATION GUARANTEE
@@ -273,7 +275,7 @@ def build_why_prompt(
     commits_section = f"## Commits\n\n{commits_body}" if commits_body else "## Commits"
 
     # Sparse-history notice: instruct LLM to inspect code structure when commits < threshold.
-    # 0 commits gets distinct wording (no mention of "0 commit(s)"); 1–2 gets count-aware wording.
+    # 0 commits gets distinct wording (no mention of "0 commit(s)"); 1-2 gets count-aware wording.
     sparse_sections = []
     if len(key_commits) < SPARSE_COMMIT_THRESHOLD:
         n = len(key_commits)
@@ -302,7 +304,7 @@ def build_why_prompt(
     # Sparse notice is placed before commits so that "## Commits" remains the final
     # section when key_commits is empty, preserving the invariant that there is no
     # trailing "\n\n" after the commits header in the empty case.
-    all_sections = [target_section, code_section] + sparse_sections + [commits_section]
+    all_sections = [target_section, code_section, *sparse_sections, commits_section]
     content = "\n\n---\n\n".join(all_sections)
 
     return [Message(role="user", content=content)]

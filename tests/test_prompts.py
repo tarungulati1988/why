@@ -10,7 +10,7 @@ from pathlib import Path
 
 from why.commit import Commit
 from why.llm import Message
-from why.prompts import WHY_SYSTEM_PROMPT, CommitWithPR, build_why_prompt, SPARSE_COMMIT_THRESHOLD
+from why.prompts import WHY_SYSTEM_PROMPT, CommitWithPR, build_why_prompt
 from why.target import Target
 
 # ---------------------------------------------------------------------------
@@ -288,7 +288,7 @@ def test_target_with_line_and_symbol() -> None:
 # ---------------------------------------------------------------------------
 
 def test_sparse_history_notice_injected_when_few_commits() -> None:
-    """When len(key_commits) < SPARSE_COMMIT_THRESHOLD, a sparse-history notice must appear in the user message."""
+    """Sparse-history notice must appear when len(key_commits) < SPARSE_COMMIT_THRESHOLD."""
     # Use 2 distinct commits (below threshold of 3) to verify dynamic count
     second_commit = Commit(
         sha="def5678abc1234901234567890",
@@ -318,7 +318,7 @@ def test_sparse_history_notice_absent_when_enough_commits() -> None:
 
 
 def test_sparse_history_notice_zero_commits_wording() -> None:
-    """When there are 0 commits, the sparse notice must not say '0 commit(s)' — use distinct wording."""
+    """Zero commits must render distinct wording, not '0 commit(s)'."""
     result = build_why_prompt(FIXED_TARGET, FIXED_CURRENT_CODE, [])
     content = result[0].content
     assert "## Sparse History Notice" in content
@@ -331,7 +331,7 @@ def test_sparse_history_notice_zero_commits_wording() -> None:
 # ---------------------------------------------------------------------------
 
 def test_system_prompt_structural_contract() -> None:
-    """WHY_SYSTEM_PROMPT must define structural analysis: evidence allowed, [STRUCTURAL] tag, and output section."""
+    """WHY_SYSTEM_PROMPT must allow structural evidence, [STRUCTURAL] tag, and output section."""
     assert "structural" in WHY_SYSTEM_PROMPT.lower()
     assert "[STRUCTURAL]" in WHY_SYSTEM_PROMPT
     assert "Structural Observations" in WHY_SYSTEM_PROMPT
