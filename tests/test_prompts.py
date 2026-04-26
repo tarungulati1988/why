@@ -10,7 +10,7 @@ from pathlib import Path
 
 from why.commit import Commit
 from why.llm import Message
-from why.prompts import WHY_SYSTEM_PROMPT, CommitWithPR, build_why_prompt
+from why.prompts import WHY_SYSTEM_PROMPT, CommitWithPR, build_system_prompt, build_why_prompt
 from why.target import Target
 
 # ---------------------------------------------------------------------------
@@ -331,7 +331,45 @@ def test_sparse_history_notice_zero_commits_wording() -> None:
 # ---------------------------------------------------------------------------
 
 def test_system_prompt_structural_contract() -> None:
-    """WHY_SYSTEM_PROMPT must allow structural evidence, [STRUCTURAL] tag, and output section."""
-    assert "structural" in WHY_SYSTEM_PROMPT.lower()
-    assert "[STRUCTURAL]" in WHY_SYSTEM_PROMPT
-    assert "Structural Observations" in WHY_SYSTEM_PROMPT
+    """WHY_SYSTEM_PROMPT must instruct structural analysis in prose without tag syntax."""
+    # The prompt must still instruct structural analysis (uses "code structure" not "structural")
+    assert "code structure" in WHY_SYSTEM_PROMPT.lower()
+    # The new prompt uses prose instructions, not tag syntax
+    assert "[STRUCTURAL]" not in WHY_SYSTEM_PROMPT
+    # The new prompt references the sparse-history trigger by name
+    assert "Sparse History Notice" in WHY_SYSTEM_PROMPT
+    # The new prompt instructs code-structure analysis via naming conventions
+    assert "naming conventions" in WHY_SYSTEM_PROMPT
+    # New voice guidance: prompt must mention emoji formatting
+    assert "emoji" in WHY_SYSTEM_PROMPT.lower()
+    # Decision-test: structural insights must require causal language (because / so that)
+    assert "because" in WHY_SYSTEM_PROMPT.lower()  # decision-test requires causal language
+    # Anti-drift directive: explicitly tell the LLM not to narrate what the code does
+    assert "do not describe what the code does" in WHY_SYSTEM_PROMPT.lower()
+
+
+# ---------------------------------------------------------------------------
+# build_system_prompt — parameterized repo URL tests
+# ---------------------------------------------------------------------------
+
+
+def test_build_system_prompt_with_repo_url() -> None:
+    """When repo_url is provided, commit and PR links use the real URL."""
+    prompt = build_system_prompt("https://github.com/acme/myrepo")
+    assert "https://github.com/acme/myrepo/commit/" in prompt
+    assert "https://github.com/acme/myrepo/pull/" in prompt
+    assert "<repo-url>" not in prompt
+
+
+def test_build_system_prompt_without_repo_url() -> None:
+    """When repo_url is None, links use a generic placeholder."""
+    prompt = build_system_prompt(None)
+    assert "<repo-url>" in prompt
+    assert "tarungulati1988" not in prompt  # no hardcoded owner
+
+
+def test_build_system_prompt_with_non_github_url() -> None:
+    """Non-GitHub URLs fall back to the generic placeholder."""
+    prompt = build_system_prompt("https://gitlab.com/acme/myrepo")
+    assert "<repo-url>" in prompt
+    assert "gitlab.com" not in prompt
