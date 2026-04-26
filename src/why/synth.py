@@ -12,7 +12,7 @@ from why.history import get_file_history, get_line_history
 from why.llm import LLMClient
 from why.prompts import WHY_SYSTEM_PROMPT, CommitWithPR, build_why_prompt
 from why.scoring import select_key_commits
-from why.symbols import SymbolNotFoundError, find_symbol_range
+from why.symbols import find_symbol_range
 from why.target import Target
 
 _log = logging.getLogger(__name__)
@@ -25,15 +25,18 @@ def _extract_current_code(target: Target, line_range: tuple[int, int] | None = N
     """Return the relevant source text for *target*.
 
     Priority order:
-    1. Symbol — use the pre-resolved line_range if provided; fall back to full
-       file when line_range is None (symbol not found).
+    1. Symbol — use the pre-resolved line_range (must not be None; callers
+       are responsible for resolving via _resolve_line_range first).
     2. Line — return a ±_LINE_WINDOW window around the given line, clamped
        to file bounds.
     3. File-only — return the entire file text.
     """
     if target.symbol is not None:
-        if line_range is None:
-            return target.file.read_text()
+        # line_range is always resolved before this call for symbol targets;
+        # SymbolNotFoundError is raised by _resolve_line_range if the symbol is missing.
+        assert line_range is not None, (
+            "_extract_current_code: symbol target requires a resolved line_range"
+        )
         start, end = line_range
         lines = target.file.read_text().splitlines(keepends=True)
         return "".join(lines[start - 1 : end])
@@ -53,15 +56,13 @@ def _resolve_line_range(target: Target) -> tuple[int, int] | None:
     """Return the (start, end) line range (1-based, inclusive) for *target*.
 
     Priority order:
-    1. Symbol — delegate to find_symbol_range; return None on SymbolNotFoundError.
+    1. Symbol — delegate to find_symbol_range; raises SymbolNotFoundError if missing.
     2. Line — return (line, line).
     3. File-only — return None (no narrowing possible).
     """
     if target.symbol is not None:
-        try:
-            return find_symbol_range(target.file, target.symbol)
-        except SymbolNotFoundError:
-            return None
+        # Let SymbolNotFoundError propagate so the CLI can surface it to the user.
+        return find_symbol_range(target.file, target.symbol)
 
     if target.line is not None:
         return (target.line, target.line)

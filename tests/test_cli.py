@@ -146,7 +146,7 @@ def line_history_cli_repo(tmp_path: Path) -> Path:
 
     Returns the repo root Path.
     """
-    from conftest import _tmp_path_is_clean, make_git_runner
+    from conftest import _tmp_path_is_clean, init_git_main_branch, make_git_runner
 
     if not _tmp_path_is_clean(tmp_path):
         pytest.skip("tmp_path is inside an existing git repo — skipping integration test")
@@ -155,15 +155,7 @@ def line_history_cli_repo(tmp_path: Path) -> Path:
     repo.mkdir()
 
     git = make_git_runner(repo)
-    import subprocess as _sp
-    _git_ver = _sp.run(["git", "--version"], capture_output=True, text=True, check=True).stdout
-    # "git version 2.39.2" → (2, 39)
-    _major, _minor = (int(x) for x in _git_ver.split()[2].split(".")[:2])
-    if (_major, _minor) >= (2, 28):
-        git("init", "-b", "main")
-    else:
-        git("init")
-        git("symbolic-ref", "HEAD", "refs/heads/main")
+    init_git_main_branch(git)
 
     # Commit A: create foo.py with 10 lines
     lines = "\n".join(f"line{i}" for i in range(1, 11)) + "\n"
@@ -242,3 +234,201 @@ class TestLineTargetEndToEnd:
         assert any("foo.py" in str(m) for m in messages), (
             "LLM messages should reference the target file"
         )
+
+
+# ---------------------------------------------------------------------------
+# Real-git integration tests — symbol target
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def symbol_history_cli_repo(tmp_path: Path) -> Path:
+    """Build a real git repo where 3 commits each modify authenticate_user in auth.py.
+
+    History (oldest to newest):
+      A — create auth.py with a basic authenticate_user function (10+ lines)
+      B — update authenticate_user to add a validation check
+      C — update authenticate_user to change return logic
+
+    Returns the repo root Path.
+    """
+    from conftest import _tmp_path_is_clean, init_git_main_branch, make_git_runner
+
+    if not _tmp_path_is_clean(tmp_path):
+        pytest.skip("tmp_path is inside an existing git repo — skipping integration test")
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    git = make_git_runner(repo)
+    init_git_main_branch(git)
+
+    # Commit A: create auth.py with a basic authenticate_user function (10+ lines total)
+    auth_a = (
+        "\"\"\"Authentication module.\"\"\"\n"
+        "\n"
+        "VALID_USERS = {\"alice\": \"secret\", \"bob\": \"password\"}\n"
+        "\n"
+        "\n"
+        "def authenticate_user(username: str, password: str) -> bool:\n"
+        "    \"\"\"Return True if credentials are valid.\"\"\"\n"
+        "    stored = VALID_USERS.get(username)\n"
+        "    return stored == password\n"
+        "\n"
+        "\n"
+        "def logout_user(username: str) -> None:\n"
+        "    \"\"\"Log the user out.\"\"\"\n"
+        "    pass\n"
+    )
+    (repo / "auth.py").write_text(auth_a)
+    git("add", "auth.py")
+    git("commit", "-m", "A: create auth.py with authenticate_user")
+
+    # Commit B: add an empty-string check to authenticate_user
+    auth_b = (
+        "\"\"\"Authentication module.\"\"\"\n"
+        "\n"
+        "VALID_USERS = {\"alice\": \"secret\", \"bob\": \"password\"}\n"
+        "\n"
+        "\n"
+        "def authenticate_user(username: str, password: str) -> bool:\n"
+        "    \"\"\"Return True if credentials are valid.\"\"\"\n"
+        "    if not username or not password:\n"
+        "        return False\n"
+        "    stored = VALID_USERS.get(username)\n"
+        "    return stored == password\n"
+        "\n"
+        "\n"
+        "def logout_user(username: str) -> None:\n"
+        "    \"\"\"Log the user out.\"\"\"\n"
+        "    pass\n"
+    )
+    (repo / "auth.py").write_text(auth_b)
+    git("add", "auth.py")
+    git("commit", "-m", "B: add blank-credential guard to authenticate_user")
+
+    # Commit C: change return logic to raise on unknown user
+    auth_c = (
+        "\"\"\"Authentication module.\"\"\"\n"
+        "\n"
+        "VALID_USERS = {\"alice\": \"secret\", \"bob\": \"password\"}\n"
+        "\n"
+        "\n"
+        "def authenticate_user(username: str, password: str) -> bool:\n"
+        "    \"\"\"Return True if credentials are valid, False if wrong password.\"\"\"\n"
+        "    if not username or not password:\n"
+        "        return False\n"
+        "    stored = VALID_USERS.get(username)\n"
+        "    if stored is None:\n"
+        "        return False\n"
+        "    return stored == password\n"
+        "\n"
+        "\n"
+        "def logout_user(username: str) -> None:\n"
+        "    \"\"\"Log the user out.\"\"\"\n"
+        "    pass\n"
+    )
+    (repo / "auth.py").write_text(auth_c)
+    git("add", "auth.py")
+    git("commit", "-m", "C: return False for unknown user in authenticate_user")
+
+    return repo
+
+
+class TestSymbolTargetEndToEnd:
+    """CLI end-to-end: `why <file> <symbol>` runs the full stack against a real git repo."""
+
+    def test_file_symbol_target_runs_end_to_end(
+        self, symbol_history_cli_repo: Path
+    ) -> None:
+        """Invoking `why auth.py authenticate_user` on a real git repo:
+
+        - Passes through parse_target, find_symbol_range, get_line_history, and
+          synthesize_why for real (none of those are mocked).
+        - LLMClient.complete() is mocked to return "symbol explanation" so the
+          test is hermetic without a live API key.
+        - Path.cwd() is redirected to the test repo root so parse_target can
+          resolve the absolute path without raising "path escapes repository root".
+        - Exit code must be 0, output must equal the mocked explanation, and
+          LLMClient must be constructed and called exactly once.
+        - The LLM messages must reference both "auth.py" and "authenticate_user",
+          proving find_symbol_range was invoked and the symbol name reached the prompt.
+        """
+        from why.symbols import find_symbol_range as _real_find_symbol_range
+
+        repo = symbol_history_cli_repo
+        # Resolve symlinks so parse_target's relative_to guard passes on macOS
+        # (tmp_path may be /var/folders/… which resolves to /private/var/folders/…).
+        target_spec = str((repo / "auth.py").resolve())
+
+        with (
+            patch("why.cli.Path") as mock_path_cls,
+            patch("why.cli.LLMClient") as mock_llm_cls,
+            patch("why.synth.find_symbol_range", wraps=_real_find_symbol_range) as spy_fsr,
+        ):
+            # Forward all Path construction to the real Path so synthesize_why
+            # and parse_target keep working — only override cwd() to point at
+            # the test repo so the "path escapes repo root" guard passes.
+            mock_path_cls.side_effect = Path
+            mock_path_cls.cwd.return_value = repo.resolve()
+
+            # Wire the mock instance so .complete() returns our sentinel string
+            mock_llm_instance = MagicMock()
+            mock_llm_instance.complete.return_value = "symbol explanation"
+            mock_llm_cls.return_value = mock_llm_instance
+
+            result = CliRunner().invoke(main, [target_spec, "authenticate_user"])
+
+        assert result.exit_code == 0, result.output
+        assert result.output.strip() == "symbol explanation"
+        # LLMClient must be constructed once (with the default model)
+        mock_llm_cls.assert_called_once()
+        # complete() must be called — guards against future short-circuit paths
+        mock_llm_instance.complete.assert_called_once()
+        # Verify the LLM received a prompt that references the target file,
+        # catching regressions where the pipeline passes an empty or wrong prompt.
+        messages = mock_llm_instance.complete.call_args.args[1]
+        assert any("auth.py" in str(m) for m in messages), (
+            "LLM messages should reference the target file"
+        )
+        # Verify the symbol name appears in the prompt — proves find_symbol_range
+        # was used and the symbol was threaded through to the LLM prompt.
+        assert any("authenticate_user" in str(m) for m in messages), (
+            "LLM messages should reference the symbol name"
+        )
+        # Prove find_symbol_range was called by tree-sitter with the right arguments.
+        spy_fsr.assert_called_once_with(
+            (repo / "auth.py").resolve(), "authenticate_user"
+        )
+
+    def test_symbol_not_found_exits_1(
+        self, line_history_cli_repo: Path
+    ) -> None:
+        """Invoking `why foo.py nonexistent_func` on a real git repo exits 1.
+
+        The symbol doesn't exist in the file, so find_symbol_range raises
+        SymbolNotFoundError. The CLI must surface this as exit 1 with "Error:"
+        in output instead of silently falling back to file-scoped history.
+
+        # Uses line_history_cli_repo: any real .py file suffices; we only need
+        # the SymbolNotFoundError path.
+        """
+        repo = line_history_cli_repo
+        # Resolve symlinks so parse_target's relative_to guard passes on macOS.
+        target_file = (repo / "foo.py").resolve()
+
+        with (
+            patch("why.cli.Path") as mock_path_cls,
+            patch("why.cli.LLMClient") as mock_llm_cls,
+        ):
+            # Forward all Path construction to the real Path; only override cwd().
+            mock_path_cls.side_effect = Path
+            mock_path_cls.cwd.return_value = repo.resolve()
+
+            mock_llm_instance = MagicMock()
+            mock_llm_cls.return_value = mock_llm_instance
+
+            result = CliRunner().invoke(main, [str(target_file), "nonexistent_func"])
+
+        assert result.exit_code == 1, result.output
+        assert "Error:" in result.output

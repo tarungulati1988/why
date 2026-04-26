@@ -7,7 +7,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from why.commit import Commit
+from why.symbols import SymbolNotFoundError
 from why.synth import _extract_current_code, _resolve_line_range, synthesize_why
 from why.target import Target
 
@@ -62,15 +65,12 @@ class TestExtractCurrentCodeSymbol:
         assert "x = 1" not in result
         assert "z = 3" not in result
 
-    def test_symbol_not_found_falls_back_to_full_file(self, tmp_path: Path) -> None:
-        content = "def exists():\n    pass\n"
-        f = _make_py_file(tmp_path, "sample.py", content)
-        target = Target(file=f, symbol="nonexistent")
-
-        # Must not raise; must return full file text
-        result = _extract_current_code(target)
-
-        assert result == content
+    def test_symbol_requires_line_range(self, tmp_path: Path) -> None:
+        """Passing line_range=None for a symbol target triggers the assertion guard."""
+        f = _make_py_file(tmp_path, "s.py", "def foo():\n    pass\n")
+        target = Target(file=f, symbol="foo")
+        with pytest.raises(AssertionError):
+            _extract_current_code(target, None)
 
 
 class TestExtractCurrentCodeLine:
@@ -128,14 +128,18 @@ class TestResolveLineRangeSymbol:
         # my_func starts at line 2 and ends at line 3
         assert result == (2, 3)
 
-    def test_symbol_not_found_returns_none(self, tmp_path: Path) -> None:
+    def test_symbol_not_found_raises(self, tmp_path: Path) -> None:
+        """_resolve_line_range must raise SymbolNotFoundError for missing symbols.
+
+        The error propagates to the CLI so the user sees an explicit message
+        instead of a silent fallback to file-scoped history.
+        """
         content = "def exists():\n    pass\n"
         f = _make_py_file(tmp_path, "sample.py", content)
         target = Target(file=f, symbol="ghost")
 
-        result = _resolve_line_range(target)
-
-        assert result is None
+        with pytest.raises(SymbolNotFoundError):
+            _resolve_line_range(target)
 
 
 class TestResolveLineRangeLine:
@@ -701,10 +705,9 @@ class TestSynthesizeWhyStrictMode:
                 _PATCH_VALIDATE_CITATIONS,
                 side_effect=ValueError("citation validation failed: 1 issues"),
             ) as mock_validate,
+            pytest.raises(ValueError, match="citation validation failed"),
         ):
-            import pytest
-            with pytest.raises(ValueError, match="citation validation failed"):
-                synthesize_why(target, tmp_path, llm, strict=True)
+            synthesize_why(target, tmp_path, llm, strict=True)
 
         # Confirm strict=True was forwarded to validate_citations as a keyword argument.
         mock_validate.assert_called_once()
