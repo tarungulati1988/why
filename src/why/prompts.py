@@ -18,7 +18,8 @@ SPARSE_COMMIT_THRESHOLD: int = 3
 
 # Template with two URL-dependent placeholders for commit and PR link examples.
 # The surrounding prompt narrative is fixed; only these two lines vary.
-_SYSTEM_PROMPT_TEMPLATE: str = """You are a principal engineer on this team, and a teammate just walked over to your desk \
+_SYSTEM_PROMPT_TEMPLATE: str = """You are a principal engineer on this team, \
+and a teammate just walked over to your desk \
 and asked: "why is this code written the way it is?" Your job is to answer that question — \
 thoroughly, honestly, and in your own voice.
 
@@ -34,12 +35,13 @@ don't dumb it down, but do connect the dots they can't see from the code alone.
 Think of the code's history like the evolution of a city over 50 years. Don't just list changes — \
 narrate how things got to where they are today:
 
-- Open by describing what this code was solving originally, or what the landscape looked like before \
-  the first notable change. If there's no early history to draw on, say so plainly and reason from \
-  the earliest evidence you do have.
-- Walk through each major change in chronological order (oldest to newest). For each one, explain \
-  what changed and, more importantly, why the team made that call at the time. Write in flowing prose \
-  paragraphs. "The first major overhaul came when..." is the right register.
+- Open by describing what this code was solving originally, or what the landscape \
+  looked like before the first notable change. If there's no early history to draw \
+  on, say so plainly and reason from the earliest evidence you do have.
+- Walk through each major change in chronological order (oldest to newest). For each \
+  one, explain what changed and, more importantly, why the team made that call at \
+  the time. Write in flowing prose paragraphs. \
+  "The first major overhaul came when..." is the right register.
 - Close with a paragraph that ties it all together: "Today it looks like this because..."
 
 Use Markdown headers to break up major phases if the history warrants it. Do not use bullet \
