@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import subprocess
+import urllib.parse
 from pathlib import Path
 
 from why.citations import validate_citations
@@ -10,7 +12,7 @@ from why.diff import get_commit_diff
 from why.git import GitError
 from why.history import get_file_history, get_line_history
 from why.llm import LLMClient
-from why.prompts import WHY_SYSTEM_PROMPT, CommitWithPR, build_why_prompt
+from why.prompts import CommitWithPR, build_system_prompt, build_why_prompt
 from why.scoring import select_key_commits
 from why.symbols import find_symbol_range
 from why.target import Target
@@ -19,6 +21,54 @@ _log = logging.getLogger(__name__)
 
 # Lines of context to include above and below a bare line target.
 _LINE_WINDOW = 20
+
+
+def _get_repo_url(repo: Path) -> str | None:
+    """Return the origin remote URL for *repo*, or None if unavailable.
+
+    Converts SSH URLs of the form ``git@github.com:owner/repo.git`` to the
+    canonical HTTPS form ``https://github.com/owner/repo``.  Trailing ``.git``
+    is stripped from both SSH and HTTPS URLs.
+
+    Returns None on any subprocess failure (no remote, not a git repo, etc.).
+    """
+    try:
+        # Fix 1: add timeout to prevent hanging on slow/unresponsive git remotes
+        proc = subprocess.run(
+            ["git", "-C", str(repo), "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if proc.returncode != 0:
+            return None
+
+        url = proc.stdout.strip()
+
+        # Convert SSH shorthand to HTTPS: git@github.com:owner/repo.git
+        if url.startswith("git@"):
+            # Fix 3: guard against malformed SSH URLs that have no ":" separator
+            without_prefix = url[len("git@"):]
+            host, sep, path = without_prefix.partition(":")
+            if not sep:
+                return None  # malformed SSH URL — no path separator
+            url = f"https://{host}/{path}"
+
+        # Strip trailing ".git" suffix
+        if url.endswith(".git"):
+            url = url[:-4]
+
+        # Fix 2: validate URL scheme and reject control characters to prevent prompt injection
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in ("https", "http"):
+            return None
+        if any(c in url for c in ("\n", "\r", "\x00")):
+            return None
+
+        return url
+    except Exception:
+        # Swallow all errors (subprocess not found, permissions, TimeoutExpired, etc.)
+        return None
 
 
 def _extract_current_code(target: Target, line_range: tuple[int, int] | None = None) -> str:
@@ -134,7 +184,8 @@ def synthesize_why(
     ]
 
     messages = build_why_prompt(target, current_code, commits_with_prs)
-    result = llm.complete(WHY_SYSTEM_PROMPT, messages)
+    repo_url = _get_repo_url(repo)
+    result = llm.complete(build_system_prompt(repo_url), messages)
 
     # Post-process: validate every SHA mentioned in the LLM output against the
     # set of SHAs we actually provided in context.  PR numbers aren't available

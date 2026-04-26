@@ -191,6 +191,7 @@ _PATCH_DIFF = "why.synth.get_commit_diff"
 _PATCH_BUILD_PROMPT = "why.synth.build_why_prompt"
 _PATCH_EXTRACT_CODE = "why.synth._extract_current_code"
 _PATCH_RESOLVE_RANGE = "why.synth._resolve_line_range"
+_PATCH_GET_REPO_URL = "why.synth._get_repo_url"
 
 
 class TestSynthesizeWhyHappyPath:
@@ -213,14 +214,15 @@ class TestSynthesizeWhyHappyPath:
             patch(_PATCH_EXTRACT_CODE, return_value="code snippet"),
             patch(_PATCH_RESOLVE_RANGE, return_value=None),
             patch(_PATCH_BUILD_PROMPT, return_value=fake_messages),
+            patch(_PATCH_GET_REPO_URL, return_value=None),  # no remote in tmp_path
         ):
             result = synthesize_why(target, tmp_path, llm)
 
         # select_key_commits must have been called with the full history
         mock_select.assert_called_once_with(commits, {})
-        # llm.complete must receive the WHY_SYSTEM_PROMPT constant as system arg
-        from why.prompts import WHY_SYSTEM_PROMPT
-        llm.complete.assert_called_once_with(WHY_SYSTEM_PROMPT, fake_messages)
+        # llm.complete must receive build_system_prompt(None) as system arg
+        from why.prompts import build_system_prompt
+        llm.complete.assert_called_once_with(build_system_prompt(None), fake_messages)
         assert result == "the answer"
 
 
@@ -243,6 +245,7 @@ class TestSynthesizeWhySparsePath:
             patch(_PATCH_EXTRACT_CODE, return_value="code"),
             patch(_PATCH_RESOLVE_RANGE, return_value=None),
             patch(_PATCH_BUILD_PROMPT, return_value=fake_messages) as mock_prompt,
+            patch(_PATCH_GET_REPO_URL, return_value=None),
         ):
             result = synthesize_why(target, tmp_path, llm)
 
@@ -263,7 +266,10 @@ class TestSynthesizeWhyNoHistory:
         target = Target(file=f)
         llm = MagicMock()
 
-        with patch(_PATCH_FILE_HISTORY, return_value=[]):
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=[]),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+        ):
             result = synthesize_why(target, tmp_path, llm)
 
         assert result == "file has no git history"
@@ -288,6 +294,7 @@ class TestSynthesizeWhyLineTargetRouting:
             patch(_PATCH_EXTRACT_CODE, return_value="code"),
             patch(_PATCH_RESOLVE_RANGE, return_value=(5, 5)),
             patch(_PATCH_BUILD_PROMPT, return_value=[MagicMock()]),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
         ):
             synthesize_why(target, tmp_path, llm)
 
@@ -307,6 +314,7 @@ class TestSynthesizeWhyFileOnlyRouting:
         with (
             patch(_PATCH_FILE_HISTORY, return_value=[]) as mock_file_hist,
             patch(_PATCH_LINE_HISTORY) as mock_line_hist,
+            patch(_PATCH_GET_REPO_URL, return_value=None),
         ):
             synthesize_why(target, tmp_path, llm)
 
@@ -342,6 +350,7 @@ class TestSynthesizeWhyPRBodyWiring:
             patch(_PATCH_EXTRACT_CODE, return_value="code"),
             patch(_PATCH_RESOLVE_RANGE, return_value=None),
             patch(_PATCH_BUILD_PROMPT, side_effect=fake_build_prompt),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
         ):
             synthesize_why(target, tmp_path, llm, prs=prs)
 
@@ -378,6 +387,7 @@ class TestSynthesizeWhySymbolRouting:
             patch(_PATCH_EXTRACT_CODE, return_value="code"),
             patch(_PATCH_RESOLVE_RANGE, return_value=(2, 3)),
             patch(_PATCH_BUILD_PROMPT, return_value=[MagicMock()]),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
         ):
             synthesize_why(target, tmp_path, llm)
 
@@ -422,6 +432,7 @@ class TestSynthesizeWhyGitErrorHandling:
             patch(_PATCH_EXTRACT_CODE, return_value="code"),
             patch(_PATCH_RESOLVE_RANGE, return_value=None),
             patch(_PATCH_BUILD_PROMPT, side_effect=fake_build_prompt),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
         ):
             result = synthesize_why(target, tmp_path, llm)
 
@@ -476,6 +487,7 @@ class TestSynthesizeWhySparseHistoryOrdering:
             patch(_PATCH_EXTRACT_CODE, return_value="code"),
             patch(_PATCH_RESOLVE_RANGE, return_value=None),
             patch(_PATCH_BUILD_PROMPT, side_effect=fake_build_prompt),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
         ):
             synthesize_why(target, tmp_path, llm)
 
@@ -510,6 +522,7 @@ class TestSynthesizeWhySequencing:
                     "extract_code": "code",
                     "resolve_range": None,
                     "build_prompt": fake_messages,
+                    "get_repo_url": None,
                 }
                 return returns[name]
             return _side_effect
@@ -521,6 +534,7 @@ class TestSynthesizeWhySequencing:
             patch(_PATCH_EXTRACT_CODE, side_effect=track("extract_code")),
             patch(_PATCH_RESOLVE_RANGE, side_effect=track("resolve_range")),
             patch(_PATCH_BUILD_PROMPT, side_effect=track("build_prompt")),
+            patch(_PATCH_GET_REPO_URL, side_effect=track("get_repo_url")),
         ):
             synthesize_why(target, tmp_path, llm)
 
@@ -629,6 +643,7 @@ class TestSynthesizeWhyCitationLogging:
             patch(_PATCH_BUILD_PROMPT, return_value=[MagicMock()]),
             patch(_PATCH_VALIDATE_CITATIONS, return_value=[fake_issue]) as mock_validate,
             patch(_PATCH_LOG) as mock_log,
+            patch(_PATCH_GET_REPO_URL, return_value=None),
         ):
             result = synthesize_why(target, tmp_path, llm)
 
@@ -669,6 +684,7 @@ class TestSynthesizeWhyCitationLogging:
             patch(_PATCH_BUILD_PROMPT, return_value=[MagicMock()]),
             patch(_PATCH_VALIDATE_CITATIONS, return_value=[]) as mock_validate,
             patch(_PATCH_LOG) as mock_log,
+            patch(_PATCH_GET_REPO_URL, return_value=None),
         ):
             synthesize_why(target, tmp_path, llm)
 
@@ -705,6 +721,7 @@ class TestSynthesizeWhyStrictMode:
                 _PATCH_VALIDATE_CITATIONS,
                 side_effect=ValueError("citation validation failed: 1 issues"),
             ) as mock_validate,
+            patch(_PATCH_GET_REPO_URL, return_value=None),
             pytest.raises(ValueError, match="citation validation failed"),
         ):
             synthesize_why(target, tmp_path, llm, strict=True)
