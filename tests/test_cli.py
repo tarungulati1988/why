@@ -125,3 +125,120 @@ def test_no_args_shows_help() -> None:
     # Click's no_args_is_help always exits 2 (UsageError), not 0
     assert result.exit_code == 2
     assert "TARGET" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Real-git integration tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def line_history_cli_repo(tmp_path: Path) -> Path:
+    """Build a real git repo where 3 commits each touch line 1 of foo.py.
+
+    This mirrors the `line_history_repo` fixture in test_history.py but lives
+    here so CLI end-to-end tests have a self-contained isolated repo.
+
+    History (oldest to newest):
+      A — write 10 lines to foo.py (line 1 = "line1")
+      B — change line 1 to "line1 updated"
+      C — change line 1 to "line1 final"
+
+    Returns the repo root Path.
+    """
+    from conftest import _tmp_path_is_clean, make_git_runner
+
+    if not _tmp_path_is_clean(tmp_path):
+        pytest.skip("tmp_path is inside an existing git repo — skipping integration test")
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    git = make_git_runner(repo)
+    import subprocess as _sp
+    _git_ver = _sp.run(["git", "--version"], capture_output=True, text=True, check=True).stdout
+    # "git version 2.39.2" → (2, 39)
+    _major, _minor = (int(x) for x in _git_ver.split()[2].split(".")[:2])
+    if (_major, _minor) >= (2, 28):
+        git("init", "-b", "main")
+    else:
+        git("init")
+        git("symbolic-ref", "HEAD", "refs/heads/main")
+
+    # Commit A: create foo.py with 10 lines
+    lines = "\n".join(f"line{i}" for i in range(1, 11)) + "\n"
+    (repo / "foo.py").write_text(lines)
+    git("add", "foo.py")
+    git("commit", "-m", "A: create foo.py")
+
+    # Commit B: update line 1
+    lines_b = "\n".join(
+        ["line1 updated"] + [f"line{i}" for i in range(2, 11)]
+    ) + "\n"
+    (repo / "foo.py").write_text(lines_b)
+    git("add", "foo.py")
+    git("commit", "-m", "B: update line 1")
+
+    # Commit C: update line 1 again
+    lines_c = "\n".join(
+        ["line1 final"] + [f"line{i}" for i in range(2, 11)]
+    ) + "\n"
+    (repo / "foo.py").write_text(lines_c)
+    git("add", "foo.py")
+    git("commit", "-m", "C: finalize line 1")
+
+    return repo
+
+
+class TestLineTargetEndToEnd:
+    """CLI end-to-end: `why <file>:1` runs the full stack against a real git repo."""
+
+    def test_file_line_target_runs_end_to_end(
+        self, line_history_cli_repo: Path
+    ) -> None:
+        """Invoking `why foo.py:1` on a real git repo:
+
+        - Passes through parse_target, get_line_history, and synthesize_why
+          for real (none of those are mocked).
+        - LLMClient.complete() is mocked to return "line explanation" so the
+          test is hermetic without a live API key.
+        - Path.cwd() is redirected to the test repo root so parse_target can
+          resolve the absolute path without raising "path escapes repository root".
+        - Exit code must be 0, output must contain the mocked explanation, and
+          LLMClient must be constructed exactly once.
+        """
+        repo = line_history_cli_repo
+        # Resolve symlinks so parse_target's relative_to guard passes on macOS
+        # (tmp_path may be /var/folders/… which resolves to /private/var/folders/…).
+        target_spec = str((repo / "foo.py").resolve()) + ":1"
+
+        with (
+            patch("why.cli.Path") as mock_path_cls,
+            patch("why.cli.LLMClient") as mock_llm_cls,
+        ):
+            # Forward all Path construction to the real Path so synthesize_why
+            # and parse_target keep working — only override cwd() to point at
+            # the test repo so the "path escapes repo root" guard passes.
+            mock_path_cls.side_effect = Path
+            mock_path_cls.cwd.return_value = repo.resolve()
+
+            # Wire the mock instance so .complete() returns our sentinel string
+            mock_llm_instance = MagicMock()
+            mock_llm_instance.complete.return_value = "line explanation"
+            mock_llm_cls.return_value = mock_llm_instance
+
+            result = CliRunner().invoke(main, [target_spec])
+
+        assert result.exit_code == 0, result.output
+        assert result.output.strip() == "line explanation"
+        # LLMClient must be constructed once (with the default model)
+        mock_llm_cls.assert_called_once()
+        # complete() must be called — guards against future short-circuit paths
+        mock_llm_instance.complete.assert_called_once()
+        # Verify the LLM received a prompt that references the target file,
+        # catching regressions where the pipeline passes an empty or wrong prompt.
+        call_args = mock_llm_instance.complete.call_args
+        messages = call_args.args[1]
+        assert any("foo.py" in str(m) for m in messages), (
+            "LLM messages should reference the target file"
+        )
