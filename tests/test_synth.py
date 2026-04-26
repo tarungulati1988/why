@@ -3,7 +3,7 @@ and the public synthesize_why orchestration function."""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -991,13 +991,12 @@ class TestSynthesizeWhyDeepFlag:
 
     def test_deep_true_with_max_commits_caps_newest_first(self, tmp_path: Path) -> None:
         """When deep=True and max_commits=2, only the first 2 commits (newest-first) are used."""
-        from datetime import timezone
 
         newer = Commit(
             sha="new0" * 10,
             author_name="Alice",
             author_email="alice@example.com",
-            date=datetime(2024, 6, 1, tzinfo=timezone.utc),
+            date=datetime(2024, 6, 1, tzinfo=UTC),
             subject="newer commit",
             body="",
             parents=(),
@@ -1006,7 +1005,7 @@ class TestSynthesizeWhyDeepFlag:
             sha="mid0" * 10,
             author_name="Alice",
             author_email="alice@example.com",
-            date=datetime(2024, 3, 1, tzinfo=timezone.utc),
+            date=datetime(2024, 3, 1, tzinfo=UTC),
             subject="middle commit",
             body="",
             parents=(),
@@ -1015,7 +1014,7 @@ class TestSynthesizeWhyDeepFlag:
             sha="old0" * 10,
             author_name="Alice",
             author_email="alice@example.com",
-            date=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            date=datetime(2024, 1, 1, tzinfo=UTC),
             subject="older commit",
             body="",
             parents=(),
