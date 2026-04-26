@@ -13,7 +13,7 @@ from why.citations import validate_citations
 from why.diff import get_commit_diff
 from why.git import GitError
 from why.history import get_file_history, get_line_history
-from why.llm import LLMClient
+from why.llm import LLMClient, Message
 from why.prompts import (
     GROUNDING_SYSTEM_PROMPT,
     CommitWithPR,
@@ -35,7 +35,7 @@ _COST_PER_1K_TOKENS = 0.0008  # llama-3.3-70b Groq approximate rate
 _DEEP_COST_WARN_THRESHOLD = 0.50
 
 
-def _estimate_prompt_cost(system: str, messages: list) -> float:
+def _estimate_prompt_cost(system: str, messages: list[Message]) -> float:
     total_chars = len(system) + sum(len(m.content) for m in messages)
     tokens = total_chars / 4
     return (tokens / 1000) * _COST_PER_1K_TOKENS
