@@ -12,7 +12,13 @@ from why.diff import get_commit_diff
 from why.git import GitError
 from why.history import get_file_history, get_line_history
 from why.llm import LLMClient
-from why.prompts import CommitWithPR, build_system_prompt, build_why_prompt
+from why.prompts import (
+    GROUNDING_SYSTEM_PROMPT,
+    CommitWithPR,
+    build_grounding_prompt,
+    build_system_prompt,
+    build_why_prompt,
+)
 from why.scoring import select_key_commits
 from why.symbols import find_symbol_range
 from why.target import Target
@@ -127,6 +133,7 @@ def synthesize_why(
     llm: LLMClient,
     prs: dict[str, str] | None = None,
     strict: bool = False,
+    two_pass: bool = False,
 ) -> str:
     """Orchestrate the full why pipeline and return the LLM's explanation.
 
@@ -203,5 +210,13 @@ def synthesize_why(
     # Repairs or appends a deterministic timeline when the LLM omits or
     # hallucinates SHAs in that section.
     result = validate_and_repair_timeline(result, commits_with_prs, repo_url)
+
+    if two_pass:
+        grounding_messages = build_grounding_prompt(result, commits_with_prs)
+        grounding_section = llm.complete(GROUNDING_SYSTEM_PROMPT, grounding_messages)
+        if "## 🔍 Grounding Check" in grounding_section:
+            result = result + "\n\n" + grounding_section
+        else:
+            _log.warning("grounding pass returned unexpected content; skipping grounding section")
 
     return result

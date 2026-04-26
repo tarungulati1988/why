@@ -464,3 +464,50 @@ def test_help_includes_no_color() -> None:
     result = CliRunner().invoke(main, ["--help"])
     assert result.exit_code == 0
     assert "--no-color" in result.output
+
+
+# ---------------------------------------------------------------------------
+# --verify flag tests
+# ---------------------------------------------------------------------------
+
+
+def test_verify_flag_passes_two_pass_true_to_synthesize(existing_file: Path) -> None:
+    """--verify → synthesize_why called with two_pass=True."""
+    with (
+        patch("why.cli.Path") as mock_path_cls,
+        patch("why.cli.LLMClient") as mock_llm_cls,
+        patch("why.cli.synthesize_why", return_value="explanation") as mock_synth,
+    ):
+        mock_llm_cls.return_value = MagicMock()
+        mock_path_cls.cwd.return_value = existing_file.parent
+
+        result = CliRunner().invoke(main, ["--verify", str(existing_file)])
+
+    assert result.exit_code == 0, result.output
+    _, kwargs = mock_synth.call_args
+    assert kwargs.get("two_pass") is True
+
+
+def test_no_verify_flag_passes_two_pass_false_to_synthesize(existing_file: Path) -> None:
+    """Without --verify → synthesize_why called with two_pass=False."""
+    with (
+        patch("why.cli.Path") as mock_path_cls,
+        patch("why.cli.LLMClient") as mock_llm_cls,
+        patch("why.cli.synthesize_why", return_value="explanation") as mock_synth,
+    ):
+        mock_llm_cls.return_value = MagicMock()
+        mock_path_cls.cwd.return_value = existing_file.parent
+
+        result = CliRunner().invoke(main, [str(existing_file)])
+
+    assert result.exit_code == 0, result.output
+    _, kwargs = mock_synth.call_args
+    assert kwargs.get("two_pass") is False
+
+
+def test_verify_flag_help_text() -> None:
+    """--help output mentions two-pass or grounding for the --verify flag."""
+    result = CliRunner().invoke(main, ["--help"])
+    assert result.exit_code == 0
+    assert "--verify" in result.output
+    assert "two-pass" in result.output or "grounding" in result.output

@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from why.commit import Commit
+from why.llm import LLMClient
 from why.symbols import SymbolNotFoundError
 from why.synth import _extract_current_code, _resolve_line_range, synthesize_why
 from why.target import Target
@@ -829,3 +830,116 @@ class TestSynthesizeWhyStrictMode:
         # Confirm strict=True was forwarded to validate_citations as a keyword argument.
         mock_validate.assert_called_once()
         assert mock_validate.call_args.kwargs.get("strict") is True
+
+
+# ---------------------------------------------------------------------------
+# Two-pass synthesis tests
+# ---------------------------------------------------------------------------
+
+_PATCH_BUILD_GROUNDING_PROMPT = "why.synth.build_grounding_prompt"
+
+
+class TestSynthesizeWhyTwoPass:
+    """When two_pass=True, synthesize_why makes a second llm.complete call for grounding."""
+
+    def _make_setup(self, tmp_path: Path):
+        sha = "abc1234def5678901234567890"
+        commits = [_make_commit(sha)]
+        f = _make_py_file(tmp_path, "foo.py", "x = 1\n")
+        target = Target(file=f)
+        return commits, f, target
+
+    def test_synthesize_why_two_pass_makes_second_llm_call(self, tmp_path: Path) -> None:
+        commits, _f, target = self._make_setup(tmp_path)
+        mock_llm = MagicMock(spec=LLMClient)
+        mock_llm.complete.side_effect = [
+            "first pass output",
+            "## 🔍 Grounding Check\n\n| Claim | Verdict |\n|---|---|\n| foo | supported |",
+        ]
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT),
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, return_value=[MagicMock()]),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+            patch(_PATCH_BUILD_GROUNDING_PROMPT, return_value=[MagicMock()]),
+        ):
+            synthesize_why(target, tmp_path, mock_llm, two_pass=True)
+
+        assert mock_llm.complete.call_count == 2
+
+    def test_synthesize_why_two_pass_appends_grounding_section(self, tmp_path: Path) -> None:
+        commits, _f, target = self._make_setup(tmp_path)
+        grounding_output = (
+            "## 🔍 Grounding Check\n\n| Claim | Verdict |\n|---|---|\n| foo | supported |"
+        )
+        mock_llm = MagicMock(spec=LLMClient)
+        mock_llm.complete.side_effect = ["first pass output", grounding_output]
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT),
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, return_value=[MagicMock()]),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+            patch(_PATCH_BUILD_GROUNDING_PROMPT, return_value=[MagicMock()]),
+        ):
+            result = synthesize_why(target, tmp_path, mock_llm, two_pass=True)
+
+        assert "## 🔍 Grounding Check" in result
+
+    def test_synthesize_why_single_pass_unchanged(self, tmp_path: Path) -> None:
+        commits, _f, target = self._make_setup(tmp_path)
+        mock_llm = MagicMock(spec=LLMClient)
+        mock_llm.complete.return_value = "single pass output"
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT),
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, return_value=[MagicMock()]),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+        ):
+            result = synthesize_why(target, tmp_path, mock_llm)
+
+        assert mock_llm.complete.call_count == 1
+        assert "## 🔍 Grounding Check" not in result
+
+    def test_synthesize_why_two_pass_grounding_uses_first_pass_as_input(
+        self, tmp_path: Path
+    ) -> None:
+        commits, _f, target = self._make_setup(tmp_path)
+        first_pass_text = "first pass output with timeline"
+        mock_llm = MagicMock(spec=LLMClient)
+        mock_llm.complete.side_effect = [
+            first_pass_text,
+            "## 🔍 Grounding Check\n\nok",
+        ]
+        fake_grounding_messages = [MagicMock()]
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT),
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, return_value=[MagicMock()]),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+            patch(
+                _PATCH_BUILD_GROUNDING_PROMPT, return_value=fake_grounding_messages
+            ) as mock_build_grounding,
+        ):
+            synthesize_why(target, tmp_path, mock_llm, two_pass=True)
+
+        mock_build_grounding.assert_called_once()
+        call_args = mock_build_grounding.call_args
+        assert call_args.args[0].startswith(first_pass_text)
+        assert isinstance(call_args.args[1], list)
+        assert len(call_args.args[1]) > 0

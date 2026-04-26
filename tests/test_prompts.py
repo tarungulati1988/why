@@ -10,7 +10,14 @@ from pathlib import Path
 
 from why.commit import Commit
 from why.llm import Message
-from why.prompts import WHY_SYSTEM_PROMPT, CommitWithPR, build_system_prompt, build_why_prompt
+from why.prompts import (
+    GROUNDING_SYSTEM_PROMPT,
+    WHY_SYSTEM_PROMPT,
+    CommitWithPR,
+    build_grounding_prompt,
+    build_system_prompt,
+    build_why_prompt,
+)
 from why.target import Target
 
 # ---------------------------------------------------------------------------
@@ -450,3 +457,55 @@ def test_system_prompt_timeline_text_fence_instruction() -> None:
     """build_system_prompt() result must instruct wrapping the block in a ```text fence."""
     prompt = build_system_prompt()
     assert "```text" in prompt
+
+
+# ---------------------------------------------------------------------------
+# Grounding pass — GROUNDING_SYSTEM_PROMPT and build_grounding_prompt()
+# ---------------------------------------------------------------------------
+
+
+def test_grounding_system_prompt_exists() -> None:
+    """GROUNDING_SYSTEM_PROMPT must be a non-empty string."""
+    assert isinstance(GROUNDING_SYSTEM_PROMPT, str)
+    assert len(GROUNDING_SYSTEM_PROMPT) > 0
+
+
+def test_grounding_system_prompt_contains_key_instructions() -> None:
+    """GROUNDING_SYSTEM_PROMPT must mention all four table column concepts."""
+    assert "Grounding Check" in GROUNDING_SYSTEM_PROMPT
+    assert "Claim" in GROUNDING_SYSTEM_PROMPT
+    assert "Grounded" in GROUNDING_SYSTEM_PROMPT
+    assert "Evidence" in GROUNDING_SYSTEM_PROMPT
+
+
+def test_build_grounding_prompt_returns_single_user_message() -> None:
+    """build_grounding_prompt must return a list with exactly one Message(role='user')."""
+    commits = [CommitWithPR(commit=FIXED_COMMIT)]
+    result = build_grounding_prompt("some explanation", commits)
+    assert isinstance(result, list)
+    assert len(result) == 1
+    assert isinstance(result[0], Message)
+    assert result[0].role == "user"
+
+
+def test_build_grounding_prompt_includes_first_pass_text() -> None:
+    """The first-pass explanation must appear verbatim in the message content."""
+    first_pass = "The team chose X for performance reasons."
+    commits = [CommitWithPR(commit=FIXED_COMMIT)]
+    result = build_grounding_prompt(first_pass, commits)
+    assert first_pass in result[0].content
+
+
+def test_build_grounding_prompt_includes_commit_context() -> None:
+    """The commit short SHA must appear in the message content."""
+    commits = [CommitWithPR(commit=FIXED_COMMIT)]
+    result = build_grounding_prompt("some explanation", commits)
+    assert "abc1234" in result[0].content
+
+
+def test_build_grounding_prompt_with_empty_commits() -> None:
+    """build_grounding_prompt must not crash when commits=[]."""
+    result = build_grounding_prompt("some explanation", [])
+    assert isinstance(result, list)
+    assert len(result) == 1
+    assert result[0].role == "user"
