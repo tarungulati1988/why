@@ -8,6 +8,7 @@ import click
 from why import __version__
 from why.git import GitError
 from why.llm import LLMClient, LLMError
+from why.render import render_output
 from why.symbols import SymbolNotFoundError
 from why.synth import synthesize_why
 from why.target import TargetError, parse_target
@@ -38,7 +39,8 @@ ARGUMENTS:
     show_default=True,
     help="LLM model to use.",
 )
-def main(target_spec: str, extra: str | None, model: str) -> None:
+@click.option("--no-color", is_flag=True, default=False, help="Disable rich output formatting.")
+def main(target_spec: str, extra: str | None, model: str, no_color: bool) -> None:
     """Explain why code is the way it is via git history and LLM synthesis."""
     cwd = Path.cwd()
 
@@ -55,4 +57,4 @@ def main(target_spec: str, extra: str | None, model: str) -> None:
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
 
-    click.echo(output)
+    render_output(output, color=not no_color)

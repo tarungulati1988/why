@@ -48,12 +48,30 @@ why src/auth/middleware.py handle_session_timeout
 why --model llama-3.1-8b-instant src/auth/middleware.py
 ```
 
+### Disable color / pipe-friendly output
+
+```bash
+why --no-color src/auth/middleware.py     # raw markdown, no ANSI
+why src/auth/middleware.py | grep "added" # piping auto-disables rich
+```
+
 ### Get help
 
 ```bash
 why --help          # full reference with argument descriptions
 why --version       # print version and exit
 ```
+
+## Supported languages
+
+Symbol-scoped analysis (`why <file> <symbol>`) uses tree-sitter and supports:
+
+| Language | Extensions |
+|----------|-----------|
+| Python   | `.py`     |
+| Go       | `.go`     |
+
+File and line targets (`why <file>` and `why <file>:<line>`) work with any language — tree-sitter is only needed for symbol lookup.
 
 ## Development
 
