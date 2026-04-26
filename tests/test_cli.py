@@ -436,3 +436,31 @@ class TestSymbolTargetEndToEnd:
 
         assert result.exit_code == 1, result.output
         assert "Error:" in result.output
+
+
+# ---------------------------------------------------------------------------
+# --no-color flag tests
+# ---------------------------------------------------------------------------
+
+
+def test_no_color_flag_accepted(existing_file: Path) -> None:
+    """--no-color accepted → exit 0, raw output echoed, rich Console not used."""
+    with (
+        patch("why.cli.Path") as mock_path_cls,
+        patch("why.cli.LLMClient") as mock_llm_cls,
+        patch("why.cli.synthesize_why", return_value="explanation"),
+        patch("why.render.Console") as mock_console_cls,
+    ):
+        mock_llm_cls.return_value = MagicMock()
+        mock_path_cls.cwd.return_value = existing_file.parent
+        result = CliRunner().invoke(main, ["--no-color", str(existing_file)])
+    assert result.exit_code == 0
+    assert "explanation" in result.output
+    mock_console_cls.return_value.print.assert_not_called()
+
+
+def test_help_includes_no_color() -> None:
+    """--help documents --no-color."""
+    result = CliRunner().invoke(main, ["--help"])
+    assert result.exit_code == 0
+    assert "--no-color" in result.output
