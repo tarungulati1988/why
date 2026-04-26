@@ -8,12 +8,15 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from why.commit import Commit
 from why.llm import Message
 from why.prompts import (
     GROUNDING_SYSTEM_PROMPT,
     WHY_SYSTEM_PROMPT,
     CommitWithPR,
+    PRMetadata,
     build_grounding_prompt,
     build_system_prompt,
     build_why_prompt,
@@ -413,12 +416,30 @@ def test_timeline_data_single_commit_no_pr() -> None:
 
 
 def test_timeline_data_single_commit_with_pr() -> None:
-    """A commit with pr_body containing 'PR #42' must render [PR #42] in the row."""
+    """A commit with pr_number=42 must render [PR #42] in the row."""
     from why.prompts import _render_timeline_data
 
-    cwpr = CommitWithPR(commit=FIXED_COMMIT, pr_body="Merged PR #42: fix the thing")
+    cwpr = CommitWithPR(commit=FIXED_COMMIT, pr_number=42)
     result = _render_timeline_data([cwpr])
     assert "[PR #42]" in result
+
+
+def test_timeline_data_pr_number_used_not_pr_body_regex() -> None:
+    """pr_number=None means NO [PR #N] label even if pr_body contains 'PR #42'."""
+    from why.prompts import _render_timeline_data
+
+    cwpr = CommitWithPR(commit=FIXED_COMMIT, pr_number=None, pr_body="Merged PR #42: fix")
+    result = _render_timeline_data([cwpr])
+    assert "[PR #" not in result
+
+
+def test_timeline_data_pr_number_overrides_body() -> None:
+    """When pr_number=7, [PR #7] appears regardless of pr_body content."""
+    from why.prompts import _render_timeline_data
+
+    cwpr = CommitWithPR(commit=FIXED_COMMIT, pr_number=7, pr_body="unrelated body text")
+    result = _render_timeline_data([cwpr])
+    assert "[PR #7]" in result
 
 
 def test_timeline_data_section_in_user_message() -> None:
@@ -543,3 +564,63 @@ def test_build_why_prompt_brief_section_header() -> None:
     commits = [CommitWithPR(commit=FIXED_COMMIT)]
     result = build_why_prompt(FIXED_TARGET, FIXED_CURRENT_CODE, commits, brief=True)
     assert "## Output Format" in result[0].content
+
+
+# ---------------------------------------------------------------------------
+# PRMetadata NamedTuple tests (Stride 1 of Issue #76)
+# ---------------------------------------------------------------------------
+
+
+def test_prmetadata_construction() -> None:
+    """PRMetadata can be constructed with number and body fields."""
+    meta = PRMetadata(number=42, body="Fixes #99: adds null check")
+    assert meta.number == 42
+    assert meta.body == "Fixes #99: adds null check"
+
+
+def test_prmetadata_fields_accessible_by_name() -> None:
+    """PRMetadata fields are accessible by attribute name."""
+    meta = PRMetadata(number=7, body="some body text")
+    assert meta.number == 7
+    assert meta.body == "some body text"
+
+
+def test_prmetadata_is_namedtuple() -> None:
+    """PRMetadata is a NamedTuple and supports tuple unpacking."""
+    meta = PRMetadata(number=1, body="test")
+    number, body = meta
+    assert number == 1
+    assert body == "test"
+
+
+# ---------------------------------------------------------------------------
+# CommitWithPR.pr_number field tests (Stride 1 of Issue #76)
+# ---------------------------------------------------------------------------
+
+
+def test_commitwithpr_pr_number_defaults_to_none() -> None:
+    """CommitWithPR.pr_number defaults to None when not supplied."""
+    cwpr = CommitWithPR(commit=FIXED_COMMIT)
+    assert cwpr.pr_number is None
+
+
+def test_commitwithpr_pr_number_can_be_set() -> None:
+    """CommitWithPR can be constructed with an explicit pr_number."""
+    cwpr = CommitWithPR(commit=FIXED_COMMIT, pr_number=42)
+    assert cwpr.pr_number == 42
+
+
+def test_commitwithpr_pr_number_with_pr_body() -> None:
+    """CommitWithPR accepts both pr_number and pr_body simultaneously."""
+    cwpr = CommitWithPR(commit=FIXED_COMMIT, pr_number=99, pr_body="Fixes #99")
+    assert cwpr.pr_number == 99
+    assert cwpr.pr_body == "Fixes #99"
+
+
+def test_commitwithpr_is_still_frozen() -> None:
+    """CommitWithPR remains a frozen dataclass — assignment must raise FrozenInstanceError."""
+    import dataclasses
+
+    cwpr = CommitWithPR(commit=FIXED_COMMIT, pr_number=1)
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        cwpr.pr_number = 2  # type: ignore[misc]

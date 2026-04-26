@@ -329,12 +329,14 @@ class TestSynthesizeWhyPRBodyWiring:
     """prs dict is forwarded to select_key_commits AND populates CommitWithPR.pr_body."""
 
     def test_pr_body_populated_for_matching_shas(self, tmp_path: Path) -> None:
+        from why.prompts import PRMetadata
+
         sha_a = "aaa0" * 10
         sha_b = "bbb0" * 10
         sha_c = "ccc0" * 10
         commits = [_make_commit(sha_a), _make_commit(sha_b), _make_commit(sha_c)]
-        # Only sha_a has a PR body; sha_c does not
-        prs = {sha_a: "PR body for A"}
+        # Only sha_a has a PR; sha_b and sha_c do not
+        prs: dict[str, PRMetadata] = {sha_a: PRMetadata(number=42, body="PR body for A")}
         f = _make_py_file(tmp_path, "foo.py", "x = 1\n")
         target = Target(file=f)
         llm = MagicMock()
@@ -364,6 +366,110 @@ class TestSynthesizeWhyPRBodyWiring:
         assert pr_bodies[sha_a] == "PR body for A"
         assert pr_bodies[sha_b] is None
         assert pr_bodies[sha_c] is None
+
+    def test_pr_number_populated_from_metadata(self, tmp_path: Path) -> None:
+        """CommitWithPR.pr_number is taken from PRMetadata.number; missing SHAs get None."""
+        from why.prompts import PRMetadata
+
+        sha_a = "aaa1" * 10
+        sha_b = "bbb1" * 10
+        commits = [_make_commit(sha_a), _make_commit(sha_b)]
+        prs: dict[str, PRMetadata] = {sha_a: PRMetadata(number=99, body="body A")}
+        f = _make_py_file(tmp_path, "foo.py", "x = 1\n")
+        target = Target(file=f)
+        llm = MagicMock()
+        llm.complete.return_value = "answer"
+
+        captured: list = []
+
+        def fake_build_prompt(t, code, cwprs, **kwargs):
+            captured.extend(cwprs)
+            return [MagicMock()]
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT, return_value=commits),
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, side_effect=fake_build_prompt),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+        ):
+            synthesize_why(target, tmp_path, llm, prs=prs)
+
+        pr_numbers = {cwpr.commit.sha: cwpr.pr_number for cwpr in captured}
+        assert pr_numbers[sha_a] == 99
+        assert pr_numbers[sha_b] is None
+
+    def test_known_prs_populated_from_metadata_numbers(self, tmp_path: Path) -> None:
+        """validate_citations receives known_prs built from PRMetadata.number values."""
+        from why.prompts import PRMetadata
+
+        sha_a = "aaa2" * 10
+        commits = [_make_commit(sha_a)]
+        prs: dict[str, PRMetadata] = {sha_a: PRMetadata(number=77, body="body")}
+        f = _make_py_file(tmp_path, "foo.py", "x = 1\n")
+        target = Target(file=f)
+        llm = MagicMock()
+        llm.complete.return_value = "answer"
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT, return_value=commits),
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, return_value=[MagicMock()]),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+            patch(_PATCH_VALIDATE_CITATIONS, return_value=[]) as mock_validate,
+        ):
+            synthesize_why(target, tmp_path, llm, prs=prs)
+
+        mock_validate.assert_called_once()
+        call_kwargs = mock_validate.call_args.kwargs
+        assert call_kwargs.get("known_prs") == {77}
+
+    def test_known_prs_scoped_to_key_commits_not_all_prs(self, tmp_path: Path) -> None:
+        """known_prs must not include PR numbers for commits excluded by select_key_commits.
+
+        select_key_commits is only invoked when history has >= 3 commits, so we
+        supply three commits in history but patch the selector to return only the
+        key one — verifying that the non-key commit's PR number is excluded.
+        """
+        from why.prompts import PRMetadata
+
+        sha_key = "key0" * 10
+        sha_nonkey1 = "no10" * 10
+        sha_nonkey2 = "no20" * 10
+        all_commits = [_make_commit(sha_key), _make_commit(sha_nonkey1), _make_commit(sha_nonkey2)]
+        # All three SHAs have PR entries, but only sha_key is selected as a key commit
+        prs: dict[str, PRMetadata] = {
+            sha_key: PRMetadata(number=10, body="key PR"),
+            sha_nonkey1: PRMetadata(number=99, body="non-key PR 1"),
+            sha_nonkey2: PRMetadata(number=100, body="non-key PR 2"),
+        }
+        f = _make_py_file(tmp_path, "foo.py", "x = 1\n")
+        target = Target(file=f)
+        llm = MagicMock()
+        llm.complete.return_value = "answer"
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=all_commits),
+            patch(_PATCH_SELECT, return_value=[_make_commit(sha_key)]),
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, return_value=[MagicMock()]),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+            patch(_PATCH_VALIDATE_CITATIONS, return_value=[]) as mock_validate,
+        ):
+            synthesize_why(target, tmp_path, llm, prs=prs)
+
+        call_kwargs = mock_validate.call_args.kwargs
+        # PRs #99 and #100 are for non-key commits — must not appear in known_prs
+        assert call_kwargs.get("known_prs") == {10}
+        assert 99 not in call_kwargs.get("known_prs", set())
+        assert 100 not in call_kwargs.get("known_prs", set())
 
 
 # ---------------------------------------------------------------------------

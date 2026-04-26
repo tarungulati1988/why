@@ -17,6 +17,7 @@ from why.llm import LLMClient, Message
 from why.prompts import (
     GROUNDING_SYSTEM_PROMPT,
     CommitWithPR,
+    PRMetadata,
     build_grounding_prompt,
     build_system_prompt,
     build_why_prompt,
@@ -142,7 +143,7 @@ def synthesize_why(
     target: Target,
     repo: Path,
     llm: LLMClient,
-    prs: dict[str, str] | None = None,
+    prs: dict[str, PRMetadata] | None = None,
     strict: bool = False,
     two_pass: bool = False,
     brief: bool = False,
@@ -152,7 +153,7 @@ def synthesize_why(
     """Orchestrate the full why pipeline and return the LLM's explanation.
 
     Steps:
-      1. Normalise prs to an empty dict when callers pass None.
+      1. Normalise prs (dict[str, PRMetadata]) to an empty dict when callers pass None.
       2. Fetch the relevant commit history (line-scoped when target.line is set,
          file-scoped otherwise).
       3. Short-circuit with a sentinel string when there are no commits.
@@ -203,10 +204,17 @@ def synthesize_why(
 
     current_code = _extract_current_code(target, line_range)
 
-    commits_with_prs = [
-        CommitWithPR(commit=c, pr_body=prs.get(c.sha), diff=diffs[c.sha])
-        for c in key_commits
-    ]
+    commits_with_prs = []
+    for c in key_commits:
+        meta = prs.get(c.sha)
+        commits_with_prs.append(
+            CommitWithPR(
+                commit=c,
+                pr_body=meta.body if meta else None,
+                pr_number=meta.number if meta else None,
+                diff=diffs[c.sha],
+            )
+        )
 
     messages = build_why_prompt(target, current_code, commits_with_prs, brief=brief)
     repo_url = _get_repo_url(repo)
@@ -225,10 +233,11 @@ def synthesize_why(
     result = llm.complete(system_prompt, messages)
 
     # Post-process: validate every SHA mentioned in the LLM output against the
-    # set of SHAs we actually provided in context.  PR numbers aren't available
-    # from the prs dict (it maps sha → body), so pass an empty set for now.
+    # set of SHAs we actually provided in context.  PR numbers come from PRMetadata,
+    # scoped to commits_with_prs so we only accept citations the LLM was shown.
     known_shas = {c.sha for c in key_commits}
-    issues = validate_citations(result, known_shas, known_prs=set(), strict=strict)
+    known_prs = {cwpr.pr_number for cwpr in commits_with_prs if cwpr.pr_number is not None}
+    issues = validate_citations(result, known_shas, known_prs=known_prs, strict=strict)
     for issue in issues:
         # Strip non-printable characters from issue.value before logging to
         # prevent control codes or ANSI escapes from polluting log output.

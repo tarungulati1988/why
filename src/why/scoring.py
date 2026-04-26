@@ -61,6 +61,7 @@ from datetime import date
 from math import log
 
 from .commit import Commit
+from .prompts import PRMetadata
 
 # Keywords that signal a meaningful commit — each occurrence adds _KEYWORD_BONUS points.
 KEYWORDS = [
@@ -189,7 +190,7 @@ def score_commit(c: Commit, now: date, has_pr: bool) -> float:
 
 def select_key_commits(
     commits: list[Commit],
-    prs: Mapping[str, object],  # SHA -> PR object; only membership (sha in prs) is checked
+    prs: Mapping[str, PRMetadata],  # SHA -> PRMetadata; only membership (sha in prs) is checked
     n: int = 5,
     now: date | None = None,
 ) -> list[Commit]:

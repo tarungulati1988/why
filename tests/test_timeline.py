@@ -64,11 +64,25 @@ def test_deterministic_single_no_pr() -> None:
 
 
 def test_deterministic_single_with_pr() -> None:
-    """Single commit whose pr_body contains 'PR #42' gets [PR #42] appended to row."""
-    cwpr_with_pr = CommitWithPR(commit=FIXED_COMMIT, pr_body="PR #42 description")
+    """Single commit with pr_number=42 gets [PR #42] appended to row."""
+    cwpr_with_pr = CommitWithPR(commit=FIXED_COMMIT, pr_number=42)
     result = _render_deterministic_timeline([cwpr_with_pr])
     assert "[PR #42]" in result
     assert "abc1234" in result
+
+
+def test_deterministic_pr_number_used_not_pr_body_regex() -> None:
+    """pr_number=None means NO [PR #N] annotation even if pr_body contains 'PR #99'."""
+    cwpr = CommitWithPR(commit=FIXED_COMMIT, pr_number=None, pr_body="PR #99 mentioned here")
+    result = _render_deterministic_timeline([cwpr])
+    assert "[PR #" not in result
+
+
+def test_deterministic_pr_number_overrides_body() -> None:
+    """When pr_number=7 is set, [PR #7] appears regardless of pr_body content."""
+    cwpr = CommitWithPR(commit=FIXED_COMMIT, pr_number=7, pr_body="some unrelated body")
+    result = _render_deterministic_timeline([cwpr])
+    assert "[PR #7]" in result
 
 
 def test_deterministic_subject_newlines_stripped() -> None:
