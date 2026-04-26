@@ -36,3 +36,13 @@ Fixes #99: adds null check
 ```
 
 ---
+
+---
+
+## Timeline Data
+
+(Copy SHAs and dates verbatim into the timeline — do not alter them)
+
+```text
+2026-01-15  abc1234  fix: handle null token in auth check
+```

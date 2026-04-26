@@ -222,7 +222,9 @@ class TestLineTargetEndToEnd:
             result = CliRunner().invoke(main, [target_spec])
 
         assert result.exit_code == 0, result.output
-        assert result.output.strip() == "line explanation"
+        # synthesize_why now appends a ## 📊 Timeline block after the LLM response,
+        # so the output starts with the LLM text but is no longer exactly equal to it.
+        assert "line explanation" in result.output
         # LLMClient must be constructed once (with the default model)
         mock_llm_cls.assert_called_once()
         # complete() must be called — guards against future short-circuit paths
@@ -380,7 +382,9 @@ class TestSymbolTargetEndToEnd:
             result = CliRunner().invoke(main, [target_spec, "authenticate_user"])
 
         assert result.exit_code == 0, result.output
-        assert result.output.strip() == "symbol explanation"
+        # synthesize_why now appends a ## 📊 Timeline block after the LLM response,
+        # so the output starts with the LLM text but is no longer exactly equal to it.
+        assert "symbol explanation" in result.output
         # LLMClient must be constructed once (with the default model)
         mock_llm_cls.assert_called_once()
         # complete() must be called — guards against future short-circuit paths

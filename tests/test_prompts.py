@@ -145,9 +145,11 @@ def test_no_commits() -> None:
     # Target section must still be present
     assert "## Target" in result[0].content
     assert "## Current Code" in result[0].content
-    # Commits section must be present with just the header — no trailing empty body
+    # Commits section must be present with just the header — no trailing empty body.
+    # When key_commits is empty, "## Commits" has no body: it is immediately followed
+    # by the section separator "---" (not by blank commit content).
     assert "## Commits" in result[0].content
-    assert "## Commits\n\n" not in result[0].content
+    assert "## Commits\n\n---" in result[0].content
 
 
 # ---------------------------------------------------------------------------
@@ -373,3 +375,78 @@ def test_build_system_prompt_with_non_github_url() -> None:
     prompt = build_system_prompt("https://gitlab.com/acme/myrepo")
     assert "<repo-url>" in prompt
     assert "gitlab.com" not in prompt
+
+
+# ---------------------------------------------------------------------------
+# Timeline Data section tests
+# ---------------------------------------------------------------------------
+
+
+def test_timeline_data_empty_commits() -> None:
+    """Empty key_commits list must render the header and a no-commits notice."""
+    from why.prompts import _render_timeline_data
+
+    result = _render_timeline_data([])
+    assert "## Timeline Data" in result
+    assert "(no commits available)" in result
+
+
+def test_timeline_data_single_commit_no_pr() -> None:
+    """A single commit with no PR body must render a row without [PR #N]."""
+    from why.prompts import _render_timeline_data
+
+    cwpr = CommitWithPR(commit=FIXED_COMMIT)
+    result = _render_timeline_data([cwpr])
+    # Row must contain date, short SHA, and subject
+    assert "2026-01-15" in result
+    assert "abc1234" in result
+    assert "fix: handle null token in auth check" in result
+    # No PR label when pr_body is None
+    assert "[PR #" not in result
+
+
+def test_timeline_data_single_commit_with_pr() -> None:
+    """A commit with pr_body containing 'PR #42' must render [PR #42] in the row."""
+    from why.prompts import _render_timeline_data
+
+    cwpr = CommitWithPR(commit=FIXED_COMMIT, pr_body="Merged PR #42: fix the thing")
+    result = _render_timeline_data([cwpr])
+    assert "[PR #42]" in result
+
+
+def test_timeline_data_section_in_user_message() -> None:
+    """build_why_prompt result content must contain '## Timeline Data'."""
+    commits = [CommitWithPR(commit=FIXED_COMMIT)]
+    result = build_why_prompt(FIXED_TARGET, FIXED_CURRENT_CODE, commits)
+    assert "## Timeline Data" in result[0].content
+
+
+def test_timeline_data_section_is_last() -> None:
+    """'## Timeline Data' must appear after '## Commits' in the content."""
+    commits = [CommitWithPR(commit=FIXED_COMMIT)]
+    result = build_why_prompt(FIXED_TARGET, FIXED_CURRENT_CODE, commits)
+    content = result[0].content
+    assert content.index("## Timeline Data") > content.index("## Commits")
+
+
+# ---------------------------------------------------------------------------
+# System prompt timeline instruction tests (Stride 2 of Issue #71)
+# ---------------------------------------------------------------------------
+
+
+def test_system_prompt_contains_timeline_instruction() -> None:
+    """build_system_prompt() result must contain '## Appending the Timeline'."""
+    prompt = build_system_prompt()
+    assert "## Appending the Timeline" in prompt
+
+
+def test_system_prompt_timeline_references_data_section() -> None:
+    """build_system_prompt() result must reference '## Timeline Data' as source of truth."""
+    prompt = build_system_prompt()
+    assert "## Timeline Data" in prompt
+
+
+def test_system_prompt_timeline_text_fence_instruction() -> None:
+    """build_system_prompt() result must instruct wrapping the block in a ```text fence."""
+    prompt = build_system_prompt()
+    assert "```text" in prompt

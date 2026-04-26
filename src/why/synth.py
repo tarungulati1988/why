@@ -16,6 +16,7 @@ from why.prompts import CommitWithPR, build_system_prompt, build_why_prompt
 from why.scoring import select_key_commits
 from why.symbols import find_symbol_range
 from why.target import Target
+from why.timeline import validate_and_repair_timeline
 
 _log = logging.getLogger(__name__)
 
@@ -197,5 +198,10 @@ def synthesize_why(
         # prevent control codes or ANSI escapes from polluting log output.
         safe_value = "".join(c for c in issue.value if c.isprintable())
         _log.warning("citation issue %s: %s", issue.kind, safe_value)
+
+    # Post-process: ensure the ## 📊 Timeline section is present and valid.
+    # Repairs or appends a deterministic timeline when the LLM omits or
+    # hallucinates SHAs in that section.
+    result = validate_and_repair_timeline(result, commits_with_prs, repo_url)
 
     return result
