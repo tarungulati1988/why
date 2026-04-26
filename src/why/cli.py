@@ -40,7 +40,17 @@ ARGUMENTS:
     help="LLM model to use.",
 )
 @click.option("--no-color", is_flag=True, default=False, help="Disable rich output formatting.")
-def main(target_spec: str, extra: str | None, model: str, no_color: bool) -> None:
+@click.option(
+    "--verify",
+    is_flag=True,
+    default=False,
+    help=(
+        "Enable two-pass grounding check. A second LLM call evaluates each intent "
+        "claim for evidence support and appends a Grounding Check section. "
+        "Adds ~1 LLM call of latency and cost."
+    ),
+)
+def main(target_spec: str, extra: str | None, model: str, no_color: bool, verify: bool) -> None:
     """Explain why code is the way it is via git history and LLM synthesis."""
     cwd = Path.cwd()
 
@@ -52,7 +62,7 @@ def main(target_spec: str, extra: str | None, model: str, no_color: bool) -> Non
 
     try:
         llm = LLMClient(model)
-        output = synthesize_why(target, cwd, llm)
+        output = synthesize_why(target, cwd, llm, two_pass=verify)
     except (LLMError, GitError, SymbolNotFoundError) as exc:
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
