@@ -342,7 +342,7 @@ class TestSynthesizeWhyPRBodyWiring:
 
         captured_commits_with_prs = []
 
-        def fake_build_prompt(t, code, cwprs):
+        def fake_build_prompt(t, code, cwprs, **kwargs):
             captured_commits_with_prs.extend(cwprs)
             return [MagicMock()]
 
@@ -424,7 +424,7 @@ class TestSynthesizeWhyGitErrorHandling:
 
         captured: list = []
 
-        def fake_build_prompt(t, code, cwprs):
+        def fake_build_prompt(t, code, cwprs, **kwargs):
             captured.extend(cwprs)
             return [MagicMock()]
 
@@ -480,7 +480,7 @@ class TestSynthesizeWhySparseHistoryOrdering:
 
         captured_order: list = []
 
-        def fake_build_prompt(t, code, cwprs):
+        def fake_build_prompt(t, code, cwprs, **kwargs):
             captured_order.extend(cwprs)
             return [MagicMock()]
 
@@ -943,3 +943,61 @@ class TestSynthesizeWhyTwoPass:
         assert call_args.args[0].startswith(first_pass_text)
         assert isinstance(call_args.args[1], list)
         assert len(call_args.args[1]) > 0
+
+
+# ---------------------------------------------------------------------------
+# brief flag pass-through tests
+# ---------------------------------------------------------------------------
+
+
+class TestSynthesizeWhyBriefFlag:
+    """brief=True/False is forwarded to build_why_prompt as a keyword argument."""
+
+    def _make_setup(self, tmp_path: Path):
+        sha = "abc1234def5678901234567890"
+        commits = [_make_commit(sha)]
+        f = _make_py_file(tmp_path, "foo.py", "x = 1\n")
+        target = Target(file=f)
+        return commits, f, target
+
+    def test_synthesize_why_brief_passes_brief_true_to_build_prompt(
+        self, tmp_path: Path
+    ) -> None:
+        commits, _f, target = self._make_setup(tmp_path)
+        llm = MagicMock()
+        llm.complete.return_value = "answer"
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT),
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, return_value=[MagicMock()]) as mock_build_prompt,
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+        ):
+            synthesize_why(target, tmp_path, llm, brief=True)
+
+        call_kwargs = mock_build_prompt.call_args.kwargs
+        assert call_kwargs.get("brief") is True
+
+    def test_synthesize_why_no_brief_passes_brief_false_to_build_prompt(
+        self, tmp_path: Path
+    ) -> None:
+        commits, _f, target = self._make_setup(tmp_path)
+        llm = MagicMock()
+        llm.complete.return_value = "answer"
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT),
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, return_value=[MagicMock()]) as mock_build_prompt,
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+        ):
+            synthesize_why(target, tmp_path, llm)
+
+        call_kwargs = mock_build_prompt.call_args.kwargs
+        assert call_kwargs.get("brief") is False

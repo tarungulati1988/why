@@ -333,11 +333,18 @@ def _render_timeline_data(
 # Public API
 # ---------------------------------------------------------------------------
 
+_BRIEF_TAIL: str = (
+    "\n\n---\n\n## Output Format\n\n"
+    "Output ONLY a 3-sentence summary."
+    " No sections, no citations block (inline only)."
+)
+
 
 def build_why_prompt(
     target: Target,
     current_code: str,
     key_commits: list[CommitWithPR],
+    brief: bool = False,
 ) -> list[Message]:
     """Build the user message payload for the why LLM synthesis call.
 
@@ -392,6 +399,9 @@ def build_why_prompt(
         target_section, code_section, *sparse_sections, commits_section, timeline_section
     ]
     content = "\n\n---\n\n".join(all_sections)
+
+    if brief:
+        content += _BRIEF_TAIL
 
     return [Message(role="user", content=content)]
 
