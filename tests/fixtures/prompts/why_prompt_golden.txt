@@ -29,7 +29,7 @@ The git history for this region is sparse (1 commit(s)). In addition to explaini
 (no diff available)
 ```
 
-**PR Body:**
+**PR #42:** `Fix null check`
 
 ```text
 Fixes #99: adds null check
@@ -44,5 +44,5 @@ Fixes #99: adds null check
 (Copy SHAs and dates verbatim into the timeline — do not alter them)
 
 ```text
-2026-01-15  abc1234  fix: handle null token in auth check
+2026-01-15  abc1234  fix: handle null token in auth check  [PR #42]
 ```

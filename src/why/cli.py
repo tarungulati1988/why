@@ -6,11 +6,13 @@ from pathlib import Path
 import click
 
 from why import __version__
+from why.cache import PRCache
 from why.git import GitError
+from why.github import GitHubClient, detect_github_token
 from why.llm import LLMClient, LLMError
 from why.render import render_output
 from why.symbols import SymbolNotFoundError
-from why.synth import synthesize_why
+from why.synth import _get_repo_url, synthesize_why
 from why.target import TargetError, parse_target
 
 # \b is a Click magic marker that disables paragraph re-wrapping for this block,
@@ -71,6 +73,12 @@ ARGUMENTS:
     type=int,
     help="Hard cap on the number of commits sent to the LLM (newest first).",
 )
+@click.option(
+    "--no-cache",
+    is_flag=True,
+    default=False,
+    help="Disable local PR metadata cache and fetch fresh from GitHub.",
+)
 def main(
     target_spec: str,
     extra: str | None,
@@ -80,6 +88,7 @@ def main(
     brief: bool,
     deep: bool,
     max_commits: int | None,
+    no_cache: bool,
 ) -> None:
     """Explain why code is the way it is via git history and LLM synthesis."""
     cwd = Path.cwd()
@@ -96,10 +105,35 @@ def main(
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
 
+    # Detect GitHub remote and initialize PR client when available.
+    repo_url = _get_repo_url(cwd)
+    gh_client: GitHubClient | None = None
+    pr_cache: PRCache | None = None
+    if repo_url is not None and "github.com" in repo_url:
+        token = detect_github_token()
+        gh_client = GitHubClient(repo_url, token)
+        if not no_cache:
+            # Derive repo_slug from URL: "https://github.com/owner/repo" → "owner__repo"
+            parts = repo_url.rstrip("/").split("/")
+            if len(parts) >= 2:
+                slug_owner = parts[-2]
+                slug_repo = parts[-1].removesuffix(".git")
+                # Guard against path traversal: reject slugs with ".." or path separators
+                safe = all(".." not in s and "/" not in s for s in (slug_owner, slug_repo))
+                if safe:
+                    repo_slug = f"{slug_owner}__{slug_repo}"
+                    pr_cache = PRCache(repo_slug)
+
     try:
         llm = LLMClient(model)
         output = synthesize_why(
-            target, cwd, llm, two_pass=verify, brief=brief, deep=deep, max_commits=max_commits
+            target, cwd, llm,
+            gh=gh_client,
+            pr_cache=pr_cache,
+            two_pass=verify,
+            brief=brief,
+            deep=deep,
+            max_commits=max_commits,
         )
     except (LLMError, GitError, SymbolNotFoundError) as exc:
         click.echo(f"Error: {exc}", err=True)

@@ -17,6 +17,7 @@ from why.prompts import (
     WHY_SYSTEM_PROMPT,
     CommitWithPR,
     PRMetadata,
+    _render_commit,
     build_grounding_prompt,
     build_system_prompt,
     build_why_prompt,
@@ -129,17 +130,21 @@ def test_commit_date_format() -> None:
 
 
 def test_pr_body_present() -> None:
-    """When pr_body is set, the content string must appear verbatim."""
-    commits = [CommitWithPR(commit=FIXED_COMMIT, pr_body="Fixes #99: adds null check")]
+    """When pr_number and pr_body are set, the content string must appear verbatim."""
+    commits = [
+        CommitWithPR(commit=FIXED_COMMIT, pr_number=42, pr_title="Fix null check",
+                     pr_body="Fixes #99: adds null check")
+    ]
     result = build_why_prompt(FIXED_TARGET, FIXED_CURRENT_CODE, commits)
     assert "Fixes #99: adds null check" in result[0].content
 
 
 def test_pr_body_absent() -> None:
-    """When pr_body is None, the PR Body section must show 'N/A'."""
+    """When pr_number is None, the PR section is omitted entirely (no 'N/A')."""
     commits = [CommitWithPR(commit=FIXED_COMMIT, pr_body=None)]
     result = build_why_prompt(FIXED_TARGET, FIXED_CURRENT_CODE, commits)
-    assert "N/A" in result[0].content
+    assert "N/A" not in result[0].content
+    assert "PR Body" not in result[0].content
 
 
 # ---------------------------------------------------------------------------
@@ -180,7 +185,10 @@ def test_system_prompt_not_empty() -> None:
 
 def test_golden_file(update_goldens: bool) -> None:
     """Content must match the golden fixture exactly."""
-    commits = [CommitWithPR(commit=FIXED_COMMIT, pr_body="Fixes #99: adds null check")]
+    commits = [
+        CommitWithPR(commit=FIXED_COMMIT, pr_number=42, pr_title="Fix null check",
+                     pr_body="Fixes #99: adds null check")
+    ]
     result = build_why_prompt(FIXED_TARGET, FIXED_CURRENT_CODE, commits)
     content = result[0].content
     golden = Path(__file__).parent / "fixtures" / "prompts" / "why_prompt_golden.txt"
@@ -263,6 +271,8 @@ def test_pr_body_is_fenced() -> None:
     """PR body must be wrapped in a ```text fence to prevent Markdown injection."""
     cwpr = CommitWithPR(
         commit=FIXED_COMMIT,
+        pr_number=1,
+        pr_title="Injection test",
         pr_body="## Injected Heading\nsome content",
     )
     result = build_why_prompt(FIXED_TARGET, FIXED_CURRENT_CODE, [cwpr])
@@ -277,10 +287,12 @@ def test_pr_body_is_fenced() -> None:
 
 
 def test_pr_body_empty_string() -> None:
-    """An empty string pr_body must render as 'N/A', same as None."""
-    cwpr = CommitWithPR(commit=FIXED_COMMIT, pr_body="")
+    """When pr_number is present but pr_body is empty, the PR section still renders."""
+    cwpr = CommitWithPR(commit=FIXED_COMMIT, pr_number=1, pr_title="Empty body PR", pr_body="")
     result = build_why_prompt(FIXED_TARGET, FIXED_CURRENT_CODE, [cwpr])
-    assert "N/A" in result[0].content
+    # PR section should be present since pr_number is set
+    assert "PR #1:" in result[0].content
+    assert "N/A" not in result[0].content
 
 
 # ---------------------------------------------------------------------------
@@ -572,25 +584,66 @@ def test_build_why_prompt_brief_section_header() -> None:
 
 
 def test_prmetadata_construction() -> None:
-    """PRMetadata can be constructed with number and body fields."""
-    meta = PRMetadata(number=42, body="Fixes #99: adds null check")
+    """PRMetadata can be constructed with number, title, and body fields."""
+    meta = PRMetadata(number=42, title="Fix null check", body="Fixes #99: adds null check")
     assert meta.number == 42
+    assert meta.title == "Fix null check"
     assert meta.body == "Fixes #99: adds null check"
 
 
 def test_prmetadata_fields_accessible_by_name() -> None:
     """PRMetadata fields are accessible by attribute name."""
-    meta = PRMetadata(number=7, body="some body text")
+    meta = PRMetadata(number=7, title="Some feature", body="some body text")
     assert meta.number == 7
+    assert meta.title == "Some feature"
     assert meta.body == "some body text"
 
 
 def test_prmetadata_is_namedtuple() -> None:
     """PRMetadata is a NamedTuple and supports tuple unpacking."""
-    meta = PRMetadata(number=1, body="test")
-    number, body = meta
+    meta = PRMetadata(number=1, title="A title", body="test")
+    number, title, body = meta
     assert number == 1
+    assert title == "A title"
     assert body == "test"
+
+
+def test_render_commit_with_pr_shows_title_and_body() -> None:
+    """When PR is present, rendered output shows PR number and title as bold header."""
+    cwpr = CommitWithPR(
+        commit=FIXED_COMMIT,
+        pr_number=42,
+        pr_title="Fix the title",
+        pr_body="This PR fixes things.",
+    )
+    result = _render_commit(cwpr)
+    assert "PR #42:" in result
+    assert "Fix the title" in result
+
+
+def test_render_commit_with_pr_truncates_body_at_1000() -> None:
+    """Body longer than 1000 chars is truncated with ' …' suffix."""
+    long_body = "x" * 1100
+    cwpr = CommitWithPR(
+        commit=FIXED_COMMIT,
+        pr_number=5,
+        pr_title="Long PR",
+        pr_body=long_body,
+    )
+    result = _render_commit(cwpr)
+    assert " …" in result
+    # The truncated body should be 1000 chars + " …"
+    assert "x" * 1000 + " …" in result
+    # The full long body must not appear
+    assert "x" * 1100 not in result
+
+
+def test_render_commit_without_pr_omits_pr_section() -> None:
+    """When no PR is associated, the PR section is entirely omitted (no 'PR Body' or 'N/A')."""
+    cwpr = CommitWithPR(commit=FIXED_COMMIT)
+    result = _render_commit(cwpr)
+    assert "PR Body" not in result
+    assert "N/A" not in result
 
 
 # ---------------------------------------------------------------------------
@@ -624,3 +677,24 @@ def test_commitwithpr_is_still_frozen() -> None:
     cwpr = CommitWithPR(commit=FIXED_COMMIT, pr_number=1)
     with pytest.raises(dataclasses.FrozenInstanceError):
         cwpr.pr_number = 2  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# Markdown injection — PR title bold-marker sanitization
+# ---------------------------------------------------------------------------
+
+
+def test_render_commit_pr_title_with_bold_markers() -> None:
+    """A PR title containing '**' must be wrapped in backticks, not injected as raw Markdown."""
+    cwpr = CommitWithPR(
+        commit=FIXED_COMMIT,
+        pr_number=1,
+        pr_title="foo** injected **bar",
+        pr_body="body",
+    )
+    result = _render_commit(cwpr)
+    # The title must appear wrapped in backtick delimiters
+    assert "`foo** injected **bar`" in result
+    # The title must NOT appear as a raw unquoted bold-marker sequence that would
+    # break the surrounding **PR #N:** bold span.
+    assert "**PR #1: foo**" not in result

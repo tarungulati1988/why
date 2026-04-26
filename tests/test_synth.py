@@ -336,7 +336,9 @@ class TestSynthesizeWhyPRBodyWiring:
         sha_c = "ccc0" * 10
         commits = [_make_commit(sha_a), _make_commit(sha_b), _make_commit(sha_c)]
         # Only sha_a has a PR; sha_b and sha_c do not
-        prs: dict[str, PRMetadata] = {sha_a: PRMetadata(number=42, body="PR body for A")}
+        prs: dict[str, PRMetadata] = {
+            sha_a: PRMetadata(number=42, title="PR title for A", body="PR body for A")
+        }
         f = _make_py_file(tmp_path, "foo.py", "x = 1\n")
         target = Target(file=f)
         llm = MagicMock()
@@ -374,7 +376,7 @@ class TestSynthesizeWhyPRBodyWiring:
         sha_a = "aaa1" * 10
         sha_b = "bbb1" * 10
         commits = [_make_commit(sha_a), _make_commit(sha_b)]
-        prs: dict[str, PRMetadata] = {sha_a: PRMetadata(number=99, body="body A")}
+        prs: dict[str, PRMetadata] = {sha_a: PRMetadata(number=99, title="title A", body="body A")}
         f = _make_py_file(tmp_path, "foo.py", "x = 1\n")
         target = Target(file=f)
         llm = MagicMock()
@@ -407,7 +409,7 @@ class TestSynthesizeWhyPRBodyWiring:
 
         sha_a = "aaa2" * 10
         commits = [_make_commit(sha_a)]
-        prs: dict[str, PRMetadata] = {sha_a: PRMetadata(number=77, body="body")}
+        prs: dict[str, PRMetadata] = {sha_a: PRMetadata(number=77, title="body title", body="body")}
         f = _make_py_file(tmp_path, "foo.py", "x = 1\n")
         target = Target(file=f)
         llm = MagicMock()
@@ -444,9 +446,9 @@ class TestSynthesizeWhyPRBodyWiring:
         all_commits = [_make_commit(sha_key), _make_commit(sha_nonkey1), _make_commit(sha_nonkey2)]
         # All three SHAs have PR entries, but only sha_key is selected as a key commit
         prs: dict[str, PRMetadata] = {
-            sha_key: PRMetadata(number=10, body="key PR"),
-            sha_nonkey1: PRMetadata(number=99, body="non-key PR 1"),
-            sha_nonkey2: PRMetadata(number=100, body="non-key PR 2"),
+            sha_key: PRMetadata(number=10, title="key PR title", body="key PR"),
+            sha_nonkey1: PRMetadata(number=99, title="non-key PR title 1", body="non-key PR 1"),
+            sha_nonkey2: PRMetadata(number=100, title="non-key PR title 2", body="non-key PR 2"),
         }
         f = _make_py_file(tmp_path, "foo.py", "x = 1\n")
         target = Target(file=f)
@@ -680,7 +682,10 @@ class TestRenderCommitPRBodyEscaping:
             body="",
             parents=(),
         )
-        cwpr = CommitWithPR(commit=commit, pr_body="look at this ```code block```")
+        cwpr = CommitWithPR(
+            commit=commit, pr_number=1, pr_title="Backtick test",
+            pr_body="look at this ```code block```",
+        )
         target = Target(file=Path("src/foo.py"))
 
         result = build_why_prompt(target, "x = 1", [cwpr])
@@ -1373,6 +1378,200 @@ class TestSynthesizeWhyDeepCostWarningIncludesModel:
         assert any("test-model" in msg for msg in warning_messages), (
             f"Expected model name in warning, got: {warning_messages}"
         )
+
+
+# ---------------------------------------------------------------------------
+# GitHub PR fetching tests (Stride 4)
+# ---------------------------------------------------------------------------
+
+_PATCH_CLICK = "why.synth.click"
+
+
+class TestSynthesizeWhyGitHubPRFetching:
+    """synthesize_why fetches PR metadata via GitHubClient when gh= is provided."""
+
+    def _make_setup(self, tmp_path: Path, n: int = 3):
+        commits = [_make_commit(f"ghpr{i:04d}" * 10) for i in range(n)]
+        f = _make_py_file(tmp_path, "foo.py", "x = 1\n")
+        target = Target(file=f)
+        return commits, f, target
+
+    def test_gh_client_prs_injected_into_commits_with_pr(self, tmp_path: Path) -> None:
+        """When gh= is provided and returns a PR for a key commit SHA, that commit
+        gets pr_number and pr_title populated in CommitWithPR."""
+        from why.github import GitHubClient
+        from why.prompts import PRMetadata
+
+        commits, _f, target = self._make_setup(tmp_path, n=1)
+        mock_gh = MagicMock(spec=GitHubClient)
+        mock_gh.get_prs_for_commit.return_value = [PRMetadata(42, "Fix bug", "pr body")]
+
+        llm = MagicMock()
+        llm.complete.return_value = "answer"
+        captured: list = []
+
+        def fake_build_prompt(t, code, cwprs, **kwargs):
+            captured.extend(cwprs)
+            return [MagicMock()]
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT),
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, side_effect=fake_build_prompt),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+        ):
+            synthesize_why(target, tmp_path, llm, gh=mock_gh)
+
+        assert len(captured) == 1
+        assert captured[0].pr_number == 42
+        assert captured[0].pr_title == "Fix bug"
+
+    def test_gh_client_cache_hit_skips_api_call(self, tmp_path: Path) -> None:
+        """When pr_cache.get(sha) returns a cached PR list, gh.get_prs_for_commit
+        is NOT called for that SHA."""
+        from why.cache import PRCache
+        from why.github import GitHubClient
+        from why.prompts import PRMetadata
+
+        commits, _f, target = self._make_setup(tmp_path, n=1)
+        mock_gh = MagicMock(spec=GitHubClient)
+        mock_cache = MagicMock(spec=PRCache)
+        mock_cache.get.return_value = [PRMetadata(7, "Cached PR", "cached body")]
+
+        llm = MagicMock()
+        llm.complete.return_value = "answer"
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT),
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, return_value=[MagicMock()]),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+        ):
+            synthesize_why(target, tmp_path, llm, gh=mock_gh, pr_cache=mock_cache)
+
+        mock_gh.get_prs_for_commit.assert_not_called()
+
+    def test_gh_client_cache_miss_fetches_and_stores(self, tmp_path: Path) -> None:
+        """When pr_cache.get(sha) returns None (cache miss), gh.get_prs_for_commit
+        IS called and the result is stored via pr_cache.set."""
+        from why.cache import PRCache
+        from why.github import GitHubClient
+        from why.prompts import PRMetadata
+
+        commits, _f, target = self._make_setup(tmp_path, n=1)
+        sha = commits[0].sha
+        fetched_prs = [PRMetadata(55, "Fresh PR", "fresh body")]
+        mock_gh = MagicMock(spec=GitHubClient)
+        mock_gh.get_prs_for_commit.return_value = fetched_prs
+        mock_cache = MagicMock(spec=PRCache)
+        mock_cache.get.return_value = None  # cache miss
+
+        llm = MagicMock()
+        llm.complete.return_value = "answer"
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT),
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, return_value=[MagicMock()]),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+        ):
+            synthesize_why(target, tmp_path, llm, gh=mock_gh, pr_cache=mock_cache)
+
+        mock_gh.get_prs_for_commit.assert_called_once_with(sha)
+        mock_cache.set.assert_called_once_with(sha, fetched_prs)
+
+    def test_gh_none_no_fetch(self, tmp_path: Path) -> None:
+        """When gh=None, no PR fetching occurs and resolved_prs stays empty."""
+        commits, _f, target = self._make_setup(tmp_path, n=1)
+        llm = MagicMock()
+        llm.complete.return_value = "answer"
+        captured: list = []
+
+        def fake_build_prompt(t, code, cwprs, **kwargs):
+            captured.extend(cwprs)
+            return [MagicMock()]
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT),
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, side_effect=fake_build_prompt),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+        ):
+            synthesize_why(target, tmp_path, llm, gh=None)
+
+        assert all(cwpr.pr_number is None for cwpr in captured)
+
+    def test_explicit_prs_take_precedence_over_gh(self, tmp_path: Path) -> None:
+        """When both prs={sha: meta} and gh=mock_client are provided,
+        gh.get_prs_for_commit is NOT called (explicit prs dict wins)."""
+        from why.github import GitHubClient
+        from why.prompts import PRMetadata
+
+        commits, _f, target = self._make_setup(tmp_path, n=1)
+        sha = commits[0].sha
+        explicit_prs = {sha: PRMetadata(11, "Explicit PR", "explicit body")}
+        mock_gh = MagicMock(spec=GitHubClient)
+
+        llm = MagicMock()
+        llm.complete.return_value = "answer"
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT),
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, return_value=[MagicMock()]),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+        ):
+            synthesize_why(target, tmp_path, llm, prs=explicit_prs, gh=mock_gh)
+
+        mock_gh.get_prs_for_commit.assert_not_called()
+
+    def test_auth_error_continues_without_prs(self, tmp_path: Path) -> None:
+        """When gh.get_prs_for_commit raises GitHubAuthError, synthesize_why
+        completes successfully (no exception propagated) and a warning is printed."""
+        from why.github import GitHubAuthError, GitHubClient
+
+        commits, _f, target = self._make_setup(tmp_path, n=1)
+        mock_gh = MagicMock(spec=GitHubClient)
+        mock_gh.get_prs_for_commit.side_effect = GitHubAuthError("401 Unauthorized")
+
+        llm = MagicMock()
+        llm.complete.return_value = "answer"
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT),
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, return_value=[MagicMock()]),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+            patch(_PATCH_CLICK) as mock_click,
+        ):
+            result = synthesize_why(target, tmp_path, llm, gh=mock_gh)
+
+        # Must complete without raising
+        assert result.startswith("answer")
+        # Must emit a warning to stderr
+        echo_calls = mock_click.echo.call_args_list
+        assert any(
+            call.kwargs.get("err") is True
+            for call in echo_calls
+        ), f"Expected a warning echo with err=True, got: {echo_calls}"
 
 
 class TestSynthesizeWhyBriefFlag:
