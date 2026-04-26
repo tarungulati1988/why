@@ -678,3 +678,45 @@ def test_max_commits_negative_exits_nonzero(existing_file: Path) -> None:
         result = CliRunner().invoke(main, ["--max-commits", "-1", "--deep", str(existing_file)])
     assert result.exit_code != 0
     assert "must be >= 1" in result.output
+
+
+# ---------------------------------------------------------------------------
+# --no-cache flag tests (Stride 4)
+# ---------------------------------------------------------------------------
+
+
+def test_no_cache_flag_accepted(existing_file: Path) -> None:
+    """--no-cache is a valid flag — exit code 0."""
+    with (
+        patch("why.cli.Path") as mock_path_cls,
+        patch("why.cli.LLMClient") as mock_llm_cls,
+        patch("why.cli.synthesize_why", return_value="explanation"),
+    ):
+        mock_llm_cls.return_value = MagicMock()
+        mock_path_cls.cwd.return_value = existing_file.parent
+        result = CliRunner().invoke(main, ["--no-cache", str(existing_file)])
+    assert result.exit_code == 0, result.output
+
+
+def test_no_cache_flag_help_text() -> None:
+    """--help output includes 'no-cache'."""
+    result = CliRunner().invoke(main, ["--help"])
+    assert result.exit_code == 0
+    assert "no-cache" in result.output
+
+
+def test_no_cache_flag_passes_pr_cache_none(existing_file: Path) -> None:
+    """When --no-cache is passed, synthesize_why is called with pr_cache=None."""
+    with (
+        patch("why.cli.Path") as mock_path_cls,
+        patch("why.cli.LLMClient") as mock_llm_cls,
+        patch("why.cli.synthesize_why", return_value="explanation") as mock_synth,
+        patch("why.cli._get_repo_url", return_value="https://github.com/owner/repo"),
+        patch("why.cli.detect_github_token", return_value=None),
+    ):
+        mock_llm_cls.return_value = MagicMock()
+        mock_path_cls.cwd.return_value = existing_file.parent
+        result = CliRunner().invoke(main, ["--no-cache", str(existing_file)])
+    assert result.exit_code == 0, result.output
+    _, kwargs = mock_synth.call_args
+    assert kwargs.get("pr_cache") is None

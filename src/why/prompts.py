@@ -187,9 +187,10 @@ WHY_SYSTEM_PROMPT: str = build_system_prompt()  # no-URL fallback
 
 
 class PRMetadata(NamedTuple):
-    """PR number and body text sourced from VCS metadata."""
+    """PR number, title, and body text sourced from VCS metadata."""
 
     number: int
+    title: str
     body: str
 
 
@@ -200,6 +201,7 @@ class CommitWithPR:
     commit: Commit
     pr_body: str | None = None
     pr_number: int | None = None
+    pr_title: str | None = None
     diff: str = ""  # patch text from get_commit_diff(); empty = not yet fetched
 
 
@@ -265,10 +267,24 @@ def _render_commit(cwpr: CommitWithPR) -> str:
     # Escape triple backticks in diff content to prevent premature fence closure
     safe_diff = diff_text.replace("```", "\\`\\`\\`")
 
-    # Escape triple backticks in pr_body to prevent premature text-fence closure.
-    # Both None and "" fall through to "N/A".
-    safe_pr_body = cwpr.pr_body.replace("```", "\\`\\`\\`") if cwpr.pr_body else None
-    pr_section = f"```text\n{safe_pr_body}\n```" if safe_pr_body else "N/A"
+    # Build PR section only when a PR is present; omit entirely when absent.
+    pr_section = ""
+    if cwpr.pr_number is not None:
+        safe_title = (cwpr.pr_title or "").replace("\n", " ").replace("\r", "")
+        # Escape triple backticks in pr_body to prevent premature text-fence closure.
+        raw_body = cwpr.pr_body or ""
+        safe_pr_body = raw_body.replace("```", "\\`\\`\\`")
+        # Truncate body at 1000 chars to keep prompt size bounded.
+        if len(safe_pr_body) > 1000:
+            safe_pr_body = safe_pr_body[:1000] + " …"
+        pr_section = (
+            f"\n"
+            f"**PR #{cwpr.pr_number}:** `{safe_title}`\n"
+            f"\n"
+            f"```text\n"
+            f"{safe_pr_body}\n"
+            f"```\n"
+        )
 
     return (
         f'### `{commit.short_sha}` — "{safe_subject}" · {date_str} · {safe_author}\n'
@@ -278,10 +294,7 @@ def _render_commit(cwpr: CommitWithPR) -> str:
         f"```diff\n"
         f"{safe_diff}\n"
         f"```\n"
-        f"\n"
-        f"**PR Body:**\n"
-        f"\n"
-        f"{pr_section}\n"
+        f"{pr_section}"
         f"\n"
         f"---"
     )

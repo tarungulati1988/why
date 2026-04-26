@@ -9,9 +9,11 @@ from pathlib import Path
 
 import click
 
+from why.cache import PRCache
 from why.citations import validate_citations
 from why.diff import get_commit_diff
 from why.git import GitError
+from why.github import GitHubAuthError, GitHubClient
 from why.history import get_file_history, get_line_history
 from why.llm import LLMClient, Message
 from why.prompts import (
@@ -144,6 +146,8 @@ def synthesize_why(
     repo: Path,
     llm: LLMClient,
     prs: dict[str, PRMetadata] | None = None,
+    gh: GitHubClient | None = None,
+    pr_cache: PRCache | None = None,
     strict: bool = False,
     two_pass: bool = False,
     brief: bool = False,
@@ -192,6 +196,34 @@ def synthesize_why(
     # Sort oldest-first so the LLM sees chronological order regardless of path.
     key_commits = sorted(key_commits, key=lambda c: c.date)
 
+    # Fetch PR metadata via GitHub client when available.
+    # Explicit prs dict takes precedence (backward-compatible for tests and direct callers).
+    resolved_prs: dict[str, PRMetadata] = dict(prs) if prs else {}
+    if gh is not None and not resolved_prs:
+        for c in key_commits:
+            # Cache-first: check cache before hitting API
+            cached = pr_cache.get(c.sha) if pr_cache is not None else None
+            if cached is not None:
+                if cached:
+                    resolved_prs[c.sha] = cached[0]
+                continue
+            # Cache miss — fetch from GitHub
+            try:
+                fetched = gh.get_prs_for_commit(c.sha)
+            except GitHubAuthError:
+                click.echo(
+                    "⚠  GitHub PR data unavailable — proceeding without PR context",
+                    err=True,
+                )
+                break
+            if pr_cache is not None:
+                try:
+                    pr_cache.set(c.sha, fetched)
+                except OSError as exc:
+                    _log.warning("could not write PR cache for %s: %s", c.sha[:12], exc)
+            if fetched:
+                resolved_prs[c.sha] = fetched[0]
+
     # Fetch per-commit diffs; swallow GitError on individual commits rather than
     # aborting the whole call.
     diffs: dict[str, str] = {}
@@ -206,12 +238,13 @@ def synthesize_why(
 
     commits_with_prs = []
     for c in key_commits:
-        meta = prs.get(c.sha)
+        meta = resolved_prs.get(c.sha)
         commits_with_prs.append(
             CommitWithPR(
                 commit=c,
                 pr_body=meta.body if meta else None,
                 pr_number=meta.number if meta else None,
+                pr_title=meta.title if meta else None,
                 diff=diffs[c.sha],
             )
         )
