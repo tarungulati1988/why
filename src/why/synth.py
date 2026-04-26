@@ -8,6 +8,7 @@ import urllib.parse
 from pathlib import Path
 
 from why.citations import validate_citations
+from why.timeline import validate_and_repair_timeline
 from why.diff import get_commit_diff
 from why.git import GitError
 from why.history import get_file_history, get_line_history
@@ -197,5 +198,10 @@ def synthesize_why(
         # prevent control codes or ANSI escapes from polluting log output.
         safe_value = "".join(c for c in issue.value if c.isprintable())
         _log.warning("citation issue %s: %s", issue.kind, safe_value)
+
+    # Post-process: ensure the ## 📊 Timeline section is present and valid.
+    # Repairs or appends a deterministic timeline when the LLM omits or
+    # hallucinates SHAs in that section.
+    result = validate_and_repair_timeline(result, commits_with_prs, repo_url)
 
     return result

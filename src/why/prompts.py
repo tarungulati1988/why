@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from why.commit import Commit
@@ -131,7 +132,23 @@ Describe what those imply in natural prose, not as tagged labels.
 ## If history is truly insufficient
 
 If the inputs don't give you enough to say anything meaningful, say so plainly in one or two \
-sentences and explain what's missing. Do not produce a skeletal or placeholder response.\""""
+sentences and explain what's missing. Do not produce a skeletal or placeholder response.
+
+---
+
+## Appending the Timeline
+
+After the narrative, always append a `## 📊 Timeline` section. Use the `## Timeline Data` \
+entries from the user message as the source of truth — copy dates and short SHAs verbatim; \
+do not invent or alter them. You may rewrite the description to be more concise. \
+You may insert `--- Phase: <label> ---` separator rows between major phases if the history \
+warrants it (3+ commits with a clear inflection point). Wrap the block in a ```text fence.
+
+If there are no commits (0 entries in ## Timeline Data), emit:
+
+## 📊 Timeline
+
+No commit history available.\""""
 
 
 def build_system_prompt(repo_url: str | None = None) -> str:
@@ -263,6 +280,56 @@ def _render_commit(cwpr: CommitWithPR) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Timeline data helper
+# ---------------------------------------------------------------------------
+
+
+def _render_timeline_data(
+    key_commits: list[CommitWithPR],
+    repo_url: str | None = None,  # reserved for future link support — unused in this stride
+) -> str:
+    r"""Render the ## Timeline Data section for the user prompt.
+
+    Produces a fixed-width table of commit rows ordered oldest-first so the
+    LLM can copy SHAs and dates verbatim into the ASCII timeline without
+    having to re-derive them from the fuller Commits section.
+
+    Each row format: `<YYYY-MM-DD>  <short_sha>  <subject>  [PR #N]`
+    The `[PR #N]` suffix is only appended when a PR number can be extracted
+    from the commit's pr_body via the `PR #\d+` pattern.
+    """
+    header = (
+        "## Timeline Data\n\n"
+        "(Copy SHAs and dates verbatim into the timeline — do not alter them)"
+    )
+
+    if not key_commits:
+        return f"{header}\n\n(no commits available)"
+
+    rows = []
+    for cwpr in key_commits:
+        commit = cwpr.commit
+        date_str = commit.date.strftime("%Y-%m-%d")
+        # Strip newlines from subject to prevent Markdown injection
+        safe_subject = commit.subject.replace("\n", " ").replace("\r", "")
+
+        # Attempt to extract a PR number from the PR body text
+        pr_label = ""
+        if cwpr.pr_body:
+            match = re.search(r"PR\s*#(\d+)", cwpr.pr_body)
+            if match:
+                pr_label = f"  [PR #{match.group(1)}]"
+
+        rows.append(f"{date_str}  {commit.short_sha}  {safe_subject}{pr_label}")
+
+    # Fence the rows in a ```text block so commit subjects cannot sit in an
+    # instruction-privileged position in the prompt context — a subject like
+    # "ignore previous instructions" would otherwise be indistinguishable from
+    # prompt text.
+    return f"{header}\n\n```text\n" + "\n".join(rows) + "\n```"
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -314,11 +381,14 @@ def build_why_prompt(
             )
         sparse_sections = [sparse_notice]
 
+    # Build the timeline data section — gives the LLM exact SHAs/dates to copy verbatim,
+    # preventing hallucination in the ASCII timeline.
+    timeline_section = _render_timeline_data(key_commits)
+
     # Join all sections with horizontal-rule separators.
-    # Sparse notice is placed before commits so that "## Commits" remains the final
-    # section when key_commits is empty, preserving the invariant that there is no
-    # trailing "\n\n" after the commits header in the empty case.
-    all_sections = [target_section, code_section, *sparse_sections, commits_section]
+    # Sparse notice is placed before commits; timeline data is appended last so the
+    # LLM sees the structured table immediately before generating the timeline.
+    all_sections = [target_section, code_section, *sparse_sections, commits_section, timeline_section]
     content = "\n\n---\n\n".join(all_sections)
 
     return [Message(role="user", content=content)]

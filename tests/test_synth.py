@@ -223,7 +223,8 @@ class TestSynthesizeWhyHappyPath:
         # llm.complete must receive build_system_prompt(None) as system arg
         from why.prompts import build_system_prompt
         llm.complete.assert_called_once_with(build_system_prompt(None), fake_messages)
-        assert result == "the answer"
+        # synthesize_why appends a ## 📊 Timeline block after the LLM response
+        assert result.startswith("the answer")
 
 
 class TestSynthesizeWhySparsePath:
@@ -255,7 +256,8 @@ class TestSynthesizeWhySparsePath:
         call_args = mock_prompt.call_args
         commits_with_prs = call_args.args[2]
         assert len(commits_with_prs) == 2
-        assert result == "sparse answer"
+        # synthesize_why appends a ## 📊 Timeline block after the LLM response
+        assert result.startswith("sparse answer")
 
 
 class TestSynthesizeWhyNoHistory:
@@ -436,7 +438,8 @@ class TestSynthesizeWhyGitErrorHandling:
         ):
             result = synthesize_why(target, tmp_path, llm)
 
-        assert result == "answer"
+        # synthesize_why appends a ## 📊 Timeline block after the LLM response
+        assert result.startswith("answer")
         bad_cwpr = next(cwpr for cwpr in captured if cwpr.commit.sha == sha_bad)
         assert bad_cwpr.diff == ""
 
@@ -661,8 +664,9 @@ class TestSynthesizeWhyCitationLogging:
             "citation issue %s: %s", fake_issue.kind, safe_value
         )
 
-        # Result is still the raw LLM output — issues are logged, not filtered
-        assert result == llm.complete.return_value
+        # Result starts with the raw LLM output — issues are logged, not filtered.
+        # synthesize_why appends a ## 📊 Timeline block after the LLM response.
+        assert result.startswith(llm.complete.return_value)
 
     def test_synthesize_why_no_issues_no_warnings(self, tmp_path: Path) -> None:
         """When LLM output contains only known SHAs, no citation warnings are logged."""
@@ -695,6 +699,102 @@ class TestSynthesizeWhyCitationLogging:
             assert call.args[0] != "citation issue %s: %s", (
                 "Expected no citation warnings, but one was logged"
             )
+
+
+# ---------------------------------------------------------------------------
+# Timeline validation integration tests
+# ---------------------------------------------------------------------------
+
+
+class TestSynthesizeWhyTimeline:
+    """validate_and_repair_timeline is called after LLM response; timeline always present."""
+
+    def test_synthesize_why_includes_timeline_section(self, tmp_path: Path) -> None:
+        """LLM response already has a valid ## 📊 Timeline block — returned unchanged."""
+        sha = "abc1234def5678901234567890"
+        commit = _make_commit(sha)
+        f = _make_py_file(tmp_path, "foo.py", "x = 1\n")
+        target = Target(file=f)
+
+        # Build a response that already contains a valid timeline with the real short SHA.
+        short_sha = sha[:7]
+        llm_response = (
+            "Here is why this changed.\n\n"
+            f"## 📊 Timeline\n\n```text\n2024-01-01  {short_sha}  commit abc1234\n```"
+        )
+
+        llm = MagicMock()
+        llm.complete.return_value = llm_response
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=[commit]),
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, return_value=[MagicMock()]),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+        ):
+            result = synthesize_why(target, repo=tmp_path, llm=llm, prs={})
+
+        assert "## 📊 Timeline" in result
+
+    def test_synthesize_why_appends_timeline_when_missing(self, tmp_path: Path) -> None:
+        """LLM response has NO ## 📊 Timeline — validate_and_repair_timeline appends one."""
+        sha = "abc1234def5678901234567890"
+        commit = _make_commit(sha)
+        f = _make_py_file(tmp_path, "foo.py", "x = 1\n")
+        target = Target(file=f)
+
+        # Response with no timeline section at all
+        llm_response = "Here is why this changed — no timeline included."
+
+        llm = MagicMock()
+        llm.complete.return_value = llm_response
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=[commit]),
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, return_value=[MagicMock()]),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+        ):
+            result = synthesize_why(target, repo=tmp_path, llm=llm, prs={})
+
+        assert "## 📊 Timeline" in result
+
+    def test_synthesize_why_repairs_hallucinated_timeline(self, tmp_path: Path) -> None:
+        """LLM response has a timeline with a hallucinated SHA — replaced with real SHA."""
+        sha = "abc1234def5678901234567890"
+        commit = _make_commit(sha)
+        f = _make_py_file(tmp_path, "foo.py", "x = 1\n")
+        target = Target(file=f)
+
+        # Timeline contains a hallucinated 7-char SHA not matching the real commit
+        hallucinated_sha = "deadbee"
+        llm_response = (
+            "Here is why this changed.\n\n"
+            f"## 📊 Timeline\n\n```text\n2024-01-01  {hallucinated_sha}  fake commit\n```"
+        )
+
+        llm = MagicMock()
+        llm.complete.return_value = llm_response
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=[commit]),
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, return_value=[MagicMock()]),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+        ):
+            result = synthesize_why(target, repo=tmp_path, llm=llm, prs={})
+
+        # The real short SHA should appear in the repaired timeline
+        real_short_sha = sha[:7]
+        assert real_short_sha in result
+        # The hallucinated SHA should NOT appear in the result
+        assert hallucinated_sha not in result
 
 
 class TestSynthesizeWhyStrictMode:
