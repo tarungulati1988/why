@@ -21,7 +21,7 @@ def render_deterministic_timeline(key_commits: list[CommitWithPR]) -> str:
 
     Iterates key_commits in the order provided (callers pass a sorted list).
     Each row is: ``YYYY-MM-DD  <short_sha>  <subject>`` with an optional
-    ``  [PR #N]`` suffix when the commit's pr_body references a PR number.
+    ``  [PR #N]`` suffix when the commit's pr_number field is set.
 
     Returns a plain "No commit history available." message when the list is empty.
     """
@@ -37,11 +37,9 @@ def render_deterministic_timeline(key_commits: list[CommitWithPR]) -> str:
 
         row = f"{date_str}  {short_sha}  {safe_subject}"
 
-        # Append PR annotation if the pr_body contains a PR number reference
-        if cwpr.pr_body:
-            pr_match = re.search(r"PR\s*#(\d+)", cwpr.pr_body)
-            if pr_match:
-                row += f"  [PR #{pr_match.group(1)}]"
+        # Append PR annotation using the explicit pr_number field (source of truth)
+        if cwpr.pr_number is not None:
+            row += f"  [PR #{cwpr.pr_number}]"
 
         rows.append(row)
 

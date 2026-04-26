@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
+from typing import NamedTuple
 
 from why.commit import Commit
 from why.llm import Message
@@ -186,12 +186,20 @@ WHY_SYSTEM_PROMPT: str = build_system_prompt()  # no-URL fallback
 # ---------------------------------------------------------------------------
 
 
+class PRMetadata(NamedTuple):
+    """PR number and body text sourced from VCS metadata."""
+
+    number: int
+    body: str
+
+
 @dataclass(frozen=True)
 class CommitWithPR:
     """A commit paired with its associated PR description and diff patch."""
 
     commit: Commit
     pr_body: str | None = None
+    pr_number: int | None = None
     diff: str = ""  # patch text from get_commit_diff(); empty = not yet fetched
 
 
@@ -295,8 +303,7 @@ def _render_timeline_data(
     having to re-derive them from the fuller Commits section.
 
     Each row format: `<YYYY-MM-DD>  <short_sha>  <subject>  [PR #N]`
-    The `[PR #N]` suffix is only appended when a PR number can be extracted
-    from the commit's pr_body via the `PR #\d+` pattern.
+    The `[PR #N]` suffix is only appended when `cwpr.pr_number` is set (not None).
     """
     header = (
         "## Timeline Data\n\n"
@@ -313,12 +320,8 @@ def _render_timeline_data(
         # Strip newlines from subject to prevent Markdown injection
         safe_subject = commit.subject.replace("\n", " ").replace("\r", "")
 
-        # Attempt to extract a PR number from the PR body text
-        pr_label = ""
-        if cwpr.pr_body:
-            match = re.search(r"PR\s*#(\d+)", cwpr.pr_body)
-            if match:
-                pr_label = f"  [PR #{match.group(1)}]"
+        # Use the explicit pr_number field (source of truth) for the PR annotation
+        pr_label = f"  [PR #{cwpr.pr_number}]" if cwpr.pr_number is not None else ""
 
         rows.append(f"{date_str}  {commit.short_sha}  {safe_subject}{pr_label}")
 
