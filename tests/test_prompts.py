@@ -10,7 +10,7 @@ from pathlib import Path
 
 from why.commit import Commit
 from why.llm import Message
-from why.prompts import WHY_SYSTEM_PROMPT, CommitWithPR, build_why_prompt
+from why.prompts import WHY_SYSTEM_PROMPT, CommitWithPR, build_why_prompt, SPARSE_COMMIT_THRESHOLD
 from why.target import Target
 
 # ---------------------------------------------------------------------------
@@ -281,3 +281,57 @@ def test_target_with_line_and_symbol() -> None:
     target = Target(file=Path("src/why/scoring.py"), line=42, symbol="score_commit")
     result = build_why_prompt(target, FIXED_CURRENT_CODE, [])
     assert "File: `src/why/scoring.py`, Line: 42, Symbol: `score_commit`" in result[0].content
+
+
+# ---------------------------------------------------------------------------
+# Sparse-history injection tests
+# ---------------------------------------------------------------------------
+
+def test_sparse_history_notice_injected_when_few_commits() -> None:
+    """When len(key_commits) < SPARSE_COMMIT_THRESHOLD, a sparse-history notice must appear in the user message."""
+    # Use 2 distinct commits (below threshold of 3) to verify dynamic count
+    second_commit = Commit(
+        sha="def5678abc1234901234567890",
+        author_name="Jane Smith",
+        author_email="jane@example.com",
+        date=FIXED_DATE,
+        subject="chore: second commit",
+        body="",
+        parents=("aaabbbccc",),
+    )
+    commits = [CommitWithPR(commit=FIXED_COMMIT), CommitWithPR(commit=second_commit)]
+    result = build_why_prompt(FIXED_TARGET, FIXED_CURRENT_CODE, commits)
+    content = result[0].content
+    assert "## Sparse History Notice" in content
+    assert "structural" in content.lower()  # instruction must mention structural analysis
+    assert "2 commit(s)" in content  # count must be dynamic, not hardcoded
+    # Sparse notice must appear before the commits section
+    assert content.index("## Sparse History Notice") < content.index("## Commits")
+
+
+def test_sparse_history_notice_absent_when_enough_commits() -> None:
+    """When len(key_commits) >= SPARSE_COMMIT_THRESHOLD, NO sparse-history notice must appear."""
+    commits = [CommitWithPR(commit=FIXED_COMMIT) for _ in range(3)]
+    result = build_why_prompt(FIXED_TARGET, FIXED_CURRENT_CODE, commits)
+    content = result[0].content
+    assert "## Sparse History Notice" not in content
+
+
+def test_sparse_history_notice_zero_commits_wording() -> None:
+    """When there are 0 commits, the sparse notice must not say '0 commit(s)' — use distinct wording."""
+    result = build_why_prompt(FIXED_TARGET, FIXED_CURRENT_CODE, [])
+    content = result[0].content
+    assert "## Sparse History Notice" in content
+    assert "0 commit(s)" not in content
+    assert "No git history is available" in content
+
+
+# ---------------------------------------------------------------------------
+# System prompt structural-analysis tests
+# ---------------------------------------------------------------------------
+
+def test_system_prompt_structural_contract() -> None:
+    """WHY_SYSTEM_PROMPT must define structural analysis: evidence allowed, [STRUCTURAL] tag, and output section."""
+    assert "structural" in WHY_SYSTEM_PROMPT.lower()
+    assert "[STRUCTURAL]" in WHY_SYSTEM_PROMPT
+    assert "Structural Observations" in WHY_SYSTEM_PROMPT
