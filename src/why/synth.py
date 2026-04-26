@@ -8,7 +8,6 @@ import urllib.parse
 from pathlib import Path
 
 from why.citations import validate_citations
-from why.timeline import validate_and_repair_timeline
 from why.diff import get_commit_diff
 from why.git import GitError
 from why.history import get_file_history, get_line_history
@@ -17,6 +16,7 @@ from why.prompts import CommitWithPR, build_system_prompt, build_why_prompt
 from why.scoring import select_key_commits
 from why.symbols import find_symbol_range
 from why.target import Target
+from why.timeline import validate_and_repair_timeline
 
 _log = logging.getLogger(__name__)
 

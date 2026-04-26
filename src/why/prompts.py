@@ -388,7 +388,9 @@ def build_why_prompt(
     # Join all sections with horizontal-rule separators.
     # Sparse notice is placed before commits; timeline data is appended last so the
     # LLM sees the structured table immediately before generating the timeline.
-    all_sections = [target_section, code_section, *sparse_sections, commits_section, timeline_section]
+    all_sections = [
+        target_section, code_section, *sparse_sections, commits_section, timeline_section
+    ]
     content = "\n\n---\n\n".join(all_sections)
 
     return [Message(role="user", content=content)]

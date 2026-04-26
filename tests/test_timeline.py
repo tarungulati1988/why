@@ -9,11 +9,14 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-import pytest
-
 from why.commit import Commit
 from why.prompts import CommitWithPR
-from why.timeline import render_deterministic_timeline as _render_deterministic_timeline, validate_and_repair_timeline
+from why.timeline import (
+    render_deterministic_timeline as _render_deterministic_timeline,
+)
+from why.timeline import (
+    validate_and_repair_timeline,
+)
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -96,7 +99,8 @@ def test_validate_missing_section_appends() -> None:
     """Response with no timeline section gets timeline appended to the end."""
     response = "## 🏗️ How it started\n\nSome narrative here."
     result = validate_and_repair_timeline(response, [FIXED_CWPR])
-    assert result.endswith("## 📊 Timeline\n\n```text\n2026-01-15  abc1234  fix: handle null token\n```")
+    expected = "## 📊 Timeline\n\n```text\n2026-01-15  abc1234  fix: handle null token\n```"
+    assert result.endswith(expected)
 
 
 def test_validate_valid_sha_passes_through() -> None:
