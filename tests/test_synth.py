@@ -850,7 +850,7 @@ class TestSynthesizeWhyTwoPass:
         return commits, f, target
 
     def test_synthesize_why_two_pass_makes_second_llm_call(self, tmp_path: Path) -> None:
-        commits, f, target = self._make_setup(tmp_path)
+        commits, _f, target = self._make_setup(tmp_path)
         mock_llm = MagicMock(spec=LLMClient)
         mock_llm.complete.side_effect = [
             "first pass output",
@@ -872,8 +872,10 @@ class TestSynthesizeWhyTwoPass:
         assert mock_llm.complete.call_count == 2
 
     def test_synthesize_why_two_pass_appends_grounding_section(self, tmp_path: Path) -> None:
-        commits, f, target = self._make_setup(tmp_path)
-        grounding_output = "## 🔍 Grounding Check\n\n| Claim | Verdict |\n|---|---|\n| foo | supported |"
+        commits, _f, target = self._make_setup(tmp_path)
+        grounding_output = (
+            "## 🔍 Grounding Check\n\n| Claim | Verdict |\n|---|---|\n| foo | supported |"
+        )
         mock_llm = MagicMock(spec=LLMClient)
         mock_llm.complete.side_effect = ["first pass output", grounding_output]
 
@@ -892,7 +894,7 @@ class TestSynthesizeWhyTwoPass:
         assert "## 🔍 Grounding Check" in result
 
     def test_synthesize_why_single_pass_unchanged(self, tmp_path: Path) -> None:
-        commits, f, target = self._make_setup(tmp_path)
+        commits, _f, target = self._make_setup(tmp_path)
         mock_llm = MagicMock(spec=LLMClient)
         mock_llm.complete.return_value = "single pass output"
 
@@ -913,7 +915,7 @@ class TestSynthesizeWhyTwoPass:
     def test_synthesize_why_two_pass_grounding_uses_first_pass_as_input(
         self, tmp_path: Path
     ) -> None:
-        commits, f, target = self._make_setup(tmp_path)
+        commits, _f, target = self._make_setup(tmp_path)
         first_pass_text = "first pass output with timeline"
         mock_llm = MagicMock(spec=LLMClient)
         mock_llm.complete.side_effect = [

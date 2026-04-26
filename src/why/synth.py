@@ -13,11 +13,11 @@ from why.git import GitError
 from why.history import get_file_history, get_line_history
 from why.llm import LLMClient
 from why.prompts import (
+    GROUNDING_SYSTEM_PROMPT,
     CommitWithPR,
+    build_grounding_prompt,
     build_system_prompt,
     build_why_prompt,
-    GROUNDING_SYSTEM_PROMPT,
-    build_grounding_prompt,
 )
 from why.scoring import select_key_commits
 from why.symbols import find_symbol_range
