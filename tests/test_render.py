@@ -11,11 +11,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from why.render import render_output
 from rich.markdown import Markdown
 
+from why.render import render_output
 
 TEXT = "## Hello\n\nThis is **markdown**."
 
