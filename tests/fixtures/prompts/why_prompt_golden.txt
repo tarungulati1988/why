@@ -13,6 +13,12 @@ def score_commit(c: Commit, now: date, has_pr: bool) -> float:
 
 ---
 
+## Sparse History Notice
+
+The git history for this region is sparse (1 commit(s)). In addition to explaining what the commits show, analyse the code structure itself and surface any design decisions implied by the code but not explained by the commit messages. Look for: naming conventions, separation of concerns, module-level constants, defensive patterns, and invariants. Distinguish commit-backed reasoning from structural inference.
+
+---
+
 ## Commits
 
 ### `abc1234` — "fix: handle null token in auth check" · 2026-01-15 · Jane Smith
