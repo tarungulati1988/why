@@ -3,7 +3,7 @@ and the public synthesize_why orchestration function."""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -948,6 +948,325 @@ class TestSynthesizeWhyTwoPass:
 # ---------------------------------------------------------------------------
 # brief flag pass-through tests
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# deep flag tests
+# ---------------------------------------------------------------------------
+
+
+class TestSynthesizeWhyDeepFlag:
+    """deep=True bypasses select_key_commits and uses full history directly."""
+
+    def _make_setup(self, tmp_path: Path, n: int = 5):
+        commits = [_make_commit(f"deep{i:04d}" * 10) for i in range(n)]
+        f = _make_py_file(tmp_path, "foo.py", "x = 1\n")
+        target = Target(file=f)
+        return commits, f, target
+
+    def test_deep_true_skips_select_key_commits(self, tmp_path: Path) -> None:
+        """When deep=True, select_key_commits is NOT called and all commits are used."""
+        commits, _f, target = self._make_setup(tmp_path, n=5)
+        llm = MagicMock()
+        llm.complete.return_value = "deep answer"
+        captured: list = []
+
+        def fake_build_prompt(t, code, cwprs, **kwargs):
+            captured.extend(cwprs)
+            return [MagicMock()]
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT) as mock_select,
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, side_effect=fake_build_prompt),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+        ):
+            synthesize_why(target, tmp_path, llm, deep=True)
+
+        mock_select.assert_not_called()
+        assert len(captured) == 5
+
+    def test_deep_true_with_max_commits_caps_newest_first(self, tmp_path: Path) -> None:
+        """When deep=True and max_commits=2, only the first 2 commits (newest-first) are used."""
+
+        newer = Commit(
+            sha="new0" * 10,
+            author_name="Alice",
+            author_email="alice@example.com",
+            date=datetime(2024, 6, 1, tzinfo=UTC),
+            subject="newer commit",
+            body="",
+            parents=(),
+        )
+        middle = Commit(
+            sha="mid0" * 10,
+            author_name="Alice",
+            author_email="alice@example.com",
+            date=datetime(2024, 3, 1, tzinfo=UTC),
+            subject="middle commit",
+            body="",
+            parents=(),
+        )
+        older = Commit(
+            sha="old0" * 10,
+            author_name="Alice",
+            author_email="alice@example.com",
+            date=datetime(2024, 1, 1, tzinfo=UTC),
+            subject="older commit",
+            body="",
+            parents=(),
+        )
+        # git returns newest-first
+        commits_newest_first = [newer, middle, older]
+        f = _make_py_file(tmp_path, "foo.py", "x = 1\n")
+        target = Target(file=f)
+        llm = MagicMock()
+        llm.complete.return_value = "capped answer"
+        captured: list = []
+
+        def fake_build_prompt(t, code, cwprs, **kwargs):
+            captured.extend(cwprs)
+            return [MagicMock()]
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits_newest_first),
+            patch(_PATCH_SELECT) as mock_select,
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, side_effect=fake_build_prompt),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+        ):
+            synthesize_why(target, tmp_path, llm, deep=True, max_commits=2)
+
+        mock_select.assert_not_called()
+        # Only the 2 newest commits (capped before sort), then re-sorted oldest-first
+        assert len(captured) == 2
+        # After oldest-first sort: middle then newer
+        assert captured[0].commit.sha == middle.sha
+        assert captured[1].commit.sha == newer.sha
+
+    def test_deep_false_calls_select_key_commits(self, tmp_path: Path) -> None:
+        """When deep=False (default), select_key_commits is called as before."""
+        commits, _f, target = self._make_setup(tmp_path, n=5)
+        key = commits[:2]
+        llm = MagicMock()
+        llm.complete.return_value = "normal answer"
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT, return_value=key) as mock_select,
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, return_value=[MagicMock()]),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+        ):
+            synthesize_why(target, tmp_path, llm, deep=False)
+
+        mock_select.assert_called_once_with(commits, {})
+
+    def test_deep_true_with_small_history_uses_all_commits(self, tmp_path: Path) -> None:
+        """When deep=True and history has <3 commits, all commits are still used."""
+        commits, _f, target = self._make_setup(tmp_path, n=2)
+        llm = MagicMock()
+        llm.complete.return_value = "small deep answer"
+        captured: list = []
+
+        def fake_build_prompt(t, code, cwprs, **kwargs):
+            captured.extend(cwprs)
+            return [MagicMock()]
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT) as mock_select,
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, side_effect=fake_build_prompt),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+        ):
+            synthesize_why(target, tmp_path, llm, deep=True)
+
+        mock_select.assert_not_called()
+        assert len(captured) == 2
+
+
+# ---------------------------------------------------------------------------
+# deep flag cost warning tests
+# ---------------------------------------------------------------------------
+
+
+class TestSynthesizeWhyDeepCostWarning:
+    """deep=True emits a warning to stderr when estimated cost exceeds $0.50."""
+
+    _PATCH_CLICK = "why.synth.click"
+
+    def _make_setup(self, tmp_path: Path):
+        sha = "abc1234def5678901234567890"
+        commits = [_make_commit(sha)]
+        f = _make_py_file(tmp_path, "foo.py", "x = 1\n")
+        target = Target(file=f)
+        return commits, f, target
+
+    def _make_large_messages(self, n_chars: int = 3_000_000):
+        """Return a list with one mock message whose .content is n_chars long."""
+        msg = MagicMock()
+        msg.content = "x" * n_chars
+        return [msg]
+
+    def test_deep_true_large_prompt_emits_warning(self, tmp_path: Path) -> None:
+        """When deep=True and estimated cost > $0.50, click.echo is called with err=True."""
+        commits, _f, target = self._make_setup(tmp_path)
+        llm = MagicMock()
+        llm.complete.return_value = "deep answer"
+
+        # ~3M chars / 4 = 750k tokens; 750k/1000 * 0.0008 = $0.60 — exceeds threshold
+        large_messages = self._make_large_messages(n_chars=3_000_000)
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT),
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, return_value=large_messages),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+            patch(self._PATCH_CLICK) as mock_click,
+        ):
+            synthesize_why(target, tmp_path, llm, deep=True)
+
+        # click.echo must have been called with err=True and "Warning:" in message
+        echo_calls = mock_click.echo.call_args_list
+        assert any(
+            call.kwargs.get("err") is True and "Warning:" in call.args[0]
+            for call in echo_calls
+        ), f"Expected a warning echo with err=True, got: {echo_calls}"
+
+    def test_deep_true_small_prompt_no_warning(self, tmp_path: Path) -> None:
+        """When deep=True but estimated cost <= $0.50, no warning is emitted."""
+        commits, _f, target = self._make_setup(tmp_path)
+        llm = MagicMock()
+        llm.complete.return_value = "deep answer"
+
+        # 10 chars — cost negligible, well below threshold
+        small_messages = self._make_large_messages(n_chars=10)
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT),
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, return_value=small_messages),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+            patch(self._PATCH_CLICK) as mock_click,
+        ):
+            synthesize_why(target, tmp_path, llm, deep=True)
+
+        mock_click.echo.assert_not_called()
+
+    def test_deep_false_large_prompt_no_warning(self, tmp_path: Path) -> None:
+        """When deep=False, no cost warning is emitted even for a large prompt."""
+        commits, _f, target = self._make_setup(tmp_path)
+        llm = MagicMock()
+        llm.complete.return_value = "normal answer"
+
+        large_messages = self._make_large_messages(n_chars=3_000_000)
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT),
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, return_value=large_messages),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+            patch(self._PATCH_CLICK) as mock_click,
+        ):
+            synthesize_why(target, tmp_path, llm, deep=False)
+
+        mock_click.echo.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Fix 3: _estimate_prompt_cost uses float division
+# ---------------------------------------------------------------------------
+
+
+class TestEstimatePromptCostFloatDivision:
+    """_estimate_prompt_cost uses float division so small prompts return > 0."""
+
+    def test_1999_char_system_returns_positive_cost(self) -> None:
+        """A 1999-char system string must produce a non-zero cost estimate."""
+        from why.synth import _estimate_prompt_cost
+
+        system = "x" * 1999
+        cost = _estimate_prompt_cost(system, [])
+        # With float division: (1999 / 4) / 1000 * 0.0008 = 0.0003998
+        # With integer division: (1999 // 4) / 1000 * 0.0008 = (499 / 1000) * 0.0008 = 0.0003992
+        # Both are > 0, but we verify we get the float-division result
+        expected = (1999 / 4) / 1000 * 0.0008
+        assert cost == pytest.approx(expected)
+        assert cost > 0.0
+
+
+# ---------------------------------------------------------------------------
+# Fix 4: Cost warning includes model name
+# ---------------------------------------------------------------------------
+
+
+class TestSynthesizeWhyDeepCostWarningIncludesModel:
+    """When the cost warning fires, it includes the model name from llm.model."""
+
+    _PATCH_CLICK = "why.synth.click"
+
+    def _make_setup(self, tmp_path: Path):
+        sha = "abc1234def5678901234567890"
+        commits = [_make_commit(sha)]
+        f = _make_py_file(tmp_path, "foo.py", "x = 1\n")
+        target = Target(file=f)
+        return commits, f, target
+
+    def _make_large_messages(self, n_chars: int = 3_000_000):
+        msg = MagicMock()
+        msg.content = "x" * n_chars
+        return [msg]
+
+    def test_cost_warning_includes_model_name(self, tmp_path: Path) -> None:
+        """When the cost warning fires, the message contains the model name."""
+        commits, _f, target = self._make_setup(tmp_path)
+        llm = MagicMock()
+        llm.model = "test-model"
+        llm.complete.return_value = "deep answer"
+
+        large_messages = self._make_large_messages(n_chars=3_000_000)
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT),
+            patch(_PATCH_DIFF, return_value=""),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, return_value=large_messages),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+            patch(self._PATCH_CLICK) as mock_click,
+        ):
+            synthesize_why(target, tmp_path, llm, deep=True)
+
+        echo_calls = mock_click.echo.call_args_list
+        warning_messages = [
+            call.args[0]
+            for call in echo_calls
+            if call.kwargs.get("err") is True and "Warning:" in call.args[0]
+        ]
+        assert warning_messages, "Expected a cost warning to be emitted"
+        assert any("test-model" in msg for msg in warning_messages), (
+            f"Expected model name in warning, got: {warning_messages}"
+        )
 
 
 class TestSynthesizeWhyBriefFlag:

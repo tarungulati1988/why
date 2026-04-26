@@ -553,3 +553,128 @@ def test_brief_flag_help_text() -> None:
     result = CliRunner().invoke(main, ["--help"])
     assert result.exit_code == 0
     assert "--brief" in result.output
+
+
+# ---------------------------------------------------------------------------
+# --deep and --max-commits flag tests
+# ---------------------------------------------------------------------------
+
+
+def test_deep_flag_passes_deep_true_to_synthesize(existing_file: Path) -> None:
+    """--deep → synthesize_why called with deep=True."""
+    with (
+        patch("why.cli.Path") as mock_path_cls,
+        patch("why.cli.LLMClient") as mock_llm_cls,
+        patch("why.cli.synthesize_why", return_value="explanation") as mock_synth,
+    ):
+        mock_llm_cls.return_value = MagicMock()
+        mock_path_cls.cwd.return_value = existing_file.parent
+        result = CliRunner().invoke(main, ["--deep", str(existing_file)])
+    assert result.exit_code == 0, result.output
+    _, kwargs = mock_synth.call_args
+    assert kwargs.get("deep") is True
+
+
+def test_no_deep_flag_passes_deep_false_to_synthesize(existing_file: Path) -> None:
+    """Without --deep → synthesize_why called with deep=False."""
+    with (
+        patch("why.cli.Path") as mock_path_cls,
+        patch("why.cli.LLMClient") as mock_llm_cls,
+        patch("why.cli.synthesize_why", return_value="explanation") as mock_synth,
+    ):
+        mock_llm_cls.return_value = MagicMock()
+        mock_path_cls.cwd.return_value = existing_file.parent
+        result = CliRunner().invoke(main, [str(existing_file)])
+    assert result.exit_code == 0, result.output
+    _, kwargs = mock_synth.call_args
+    assert kwargs.get("deep") is False
+
+
+def test_max_commits_passes_value_to_synthesize(existing_file: Path) -> None:
+    """--max-commits 20 --deep → synthesize_why called with max_commits=20."""
+    with (
+        patch("why.cli.Path") as mock_path_cls,
+        patch("why.cli.LLMClient") as mock_llm_cls,
+        patch("why.cli.synthesize_why", return_value="explanation") as mock_synth,
+    ):
+        mock_llm_cls.return_value = MagicMock()
+        mock_path_cls.cwd.return_value = existing_file.parent
+        result = CliRunner().invoke(main, ["--deep", "--max-commits", "20", str(existing_file)])
+    assert result.exit_code == 0, result.output
+    _, kwargs = mock_synth.call_args
+    assert kwargs.get("max_commits") == 20
+
+
+def test_no_max_commits_passes_none_to_synthesize(existing_file: Path) -> None:
+    """Without --max-commits → synthesize_why called with max_commits=None."""
+    with (
+        patch("why.cli.Path") as mock_path_cls,
+        patch("why.cli.LLMClient") as mock_llm_cls,
+        patch("why.cli.synthesize_why", return_value="explanation") as mock_synth,
+    ):
+        mock_llm_cls.return_value = MagicMock()
+        mock_path_cls.cwd.return_value = existing_file.parent
+        result = CliRunner().invoke(main, [str(existing_file)])
+    assert result.exit_code == 0, result.output
+    _, kwargs = mock_synth.call_args
+    assert kwargs.get("max_commits") is None
+
+
+def test_deep_flag_help_text() -> None:
+    """--help output includes --deep and --max-commits."""
+    result = CliRunner().invoke(main, ["--help"])
+    assert result.exit_code == 0
+    assert "--deep" in result.output
+    assert "--max-commits" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Fix 1: --max-commits without --deep is a UsageError
+# ---------------------------------------------------------------------------
+
+
+def test_max_commits_without_deep_exits_nonzero(existing_file: Path) -> None:
+    """--max-commits 5 without --deep → non-zero exit, error mentions requirement."""
+    with (
+        patch("why.cli.Path") as mock_path_cls,
+        patch("why.cli.LLMClient") as mock_llm_cls,
+        patch("why.cli.synthesize_why", return_value="explanation"),
+    ):
+        mock_llm_cls.return_value = MagicMock()
+        mock_path_cls.cwd.return_value = existing_file.parent
+        result = CliRunner().invoke(main, ["--max-commits", "5", str(existing_file)])
+    assert result.exit_code != 0
+    assert "--max-commits requires --deep" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Fix 2: --max-commits 0 or negative is a BadParameter
+# ---------------------------------------------------------------------------
+
+
+def test_max_commits_zero_exits_nonzero(existing_file: Path) -> None:
+    """--max-commits 0 --deep → non-zero exit, error mentions 'must be >= 1'."""
+    with (
+        patch("why.cli.Path") as mock_path_cls,
+        patch("why.cli.LLMClient") as mock_llm_cls,
+        patch("why.cli.synthesize_why", return_value="explanation"),
+    ):
+        mock_llm_cls.return_value = MagicMock()
+        mock_path_cls.cwd.return_value = existing_file.parent
+        result = CliRunner().invoke(main, ["--max-commits", "0", "--deep", str(existing_file)])
+    assert result.exit_code != 0
+    assert "must be >= 1" in result.output
+
+
+def test_max_commits_negative_exits_nonzero(existing_file: Path) -> None:
+    """--max-commits -1 --deep → non-zero exit, error mentions 'must be >= 1'."""
+    with (
+        patch("why.cli.Path") as mock_path_cls,
+        patch("why.cli.LLMClient") as mock_llm_cls,
+        patch("why.cli.synthesize_why", return_value="explanation"),
+    ):
+        mock_llm_cls.return_value = MagicMock()
+        mock_path_cls.cwd.return_value = existing_file.parent
+        result = CliRunner().invoke(main, ["--max-commits", "-1", "--deep", str(existing_file)])
+    assert result.exit_code != 0
+    assert "must be >= 1" in result.output

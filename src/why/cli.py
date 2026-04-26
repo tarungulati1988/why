@@ -56,6 +56,21 @@ ARGUMENTS:
     default=False,
     help="Emit a 3-sentence summary instead of the full narrative.",
 )
+@click.option(
+    "--deep",
+    is_flag=True,
+    default=False,
+    help=(
+        "Include every commit in history instead of the top-scored key commits. "
+        "Larger prompt — use --max-commits to cap. Warns if estimated cost > $0.50."
+    ),
+)
+@click.option(
+    "--max-commits",
+    default=None,
+    type=int,
+    help="Hard cap on the number of commits sent to the LLM (newest first).",
+)
 def main(
     target_spec: str,
     extra: str | None,
@@ -63,9 +78,17 @@ def main(
     no_color: bool,
     verify: bool,
     brief: bool,
+    deep: bool,
+    max_commits: int | None,
 ) -> None:
     """Explain why code is the way it is via git history and LLM synthesis."""
     cwd = Path.cwd()
+
+    if max_commits is not None and max_commits < 1:
+        raise click.BadParameter("must be >= 1", param_hint="'--max-commits'")
+
+    if max_commits is not None and not deep:
+        raise click.UsageError("--max-commits requires --deep")
 
     try:
         target = parse_target(target_spec, extra, cwd)
@@ -75,7 +98,9 @@ def main(
 
     try:
         llm = LLMClient(model)
-        output = synthesize_why(target, cwd, llm, two_pass=verify, brief=brief)
+        output = synthesize_why(
+            target, cwd, llm, two_pass=verify, brief=brief, deep=deep, max_commits=max_commits
+        )
     except (LLMError, GitError, SymbolNotFoundError) as exc:
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
