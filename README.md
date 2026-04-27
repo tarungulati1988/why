@@ -53,6 +53,22 @@ Set `GROQ_API_KEY` before running (see [Install](#install) above).
 
 By default `why` uses Groq as the LLM provider. The active provider is controlled by `WHY_LLM_PROVIDER` (default: `groq`). Currently only `groq` is supported — other providers are planned.
 
+### GitHub token (optional but recommended)
+
+`why` fetches PR metadata from the GitHub API. It discovers a token automatically:
+
+1. `GITHUB_TOKEN` env var — set this if you prefer explicit control
+2. `gh` CLI — if you have [GitHub CLI](https://cli.github.com) installed and have run `gh auth login`, `why` picks up the token automatically
+3. Unauthenticated — works for public repos but is rate-limited to 60 requests/hour
+
+For private repos or heavy use, set a token explicitly:
+
+```sh
+export GITHUB_TOKEN=your_personal_access_token
+```
+
+A classic PAT with `repo` (read) scope is sufficient.
+
 ### Analyse a file
 
 ```bash
