@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "why"
+name = "git-why"
 dynamic = ["version"]
 readme = "README.md"
 description = "Explains why code is the way it is via git history and LLM synthesis."

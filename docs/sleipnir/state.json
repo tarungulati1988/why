@@ -1,12 +1,12 @@
 {
-  "branch": "sleipnir/issue-30-deep-flag",
+  "branch": "sleipnir/issue-82-homebrew-publish",
   "base_ref": "origin/main",
-  "base_sha": "1feb05a57553c41d0088c4202347f717574c806b",
-  "merge_base": "1feb05a57553c41d0088c4202347f717574c806b",
-  "dirty_files": [],
-  "included_files": [],
+  "base_sha": "bcf9824",
+  "merge_base": "bcf9824",
+  "dirty_files": [".python-version", "docs/sleipnir/design-issue-82-homebrew.md"],
+  "included_files": ["docs/sleipnir/design-issue-82-homebrew.md"],
   "excluded_files": [".python-version"],
-  "issue": 30,
-  "design_doc": "docs/designs/2026-04-26-deep-flag-design.md",
+  "issue": 82,
+  "design_doc": "docs/sleipnir/design-issue-82-homebrew.md",
   "phase": "execution"
 }

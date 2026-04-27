@@ -2,7 +2,7 @@
 
 > git blame tells you who. `why` tells you why.
 
-**Status:** M1 in progress — CLI and synthesis pipeline wired.
+**Status:** Active development — release pipeline configured; first publish triggered on tag `v0.0.1`.
 
 `why` is a CLI that explains why code is the way it is by mining git history and PR metadata, then synthesizing it with an LLM.
 
@@ -10,17 +10,46 @@ See the full design: [`docs/design/why-idea-04-18-2026-1.0.0.md`](docs/design/wh
 
 ## Install
 
-Not yet published to PyPI. For now, install from source — see Development below.
+### Homebrew (macOS — recommended)
+
+```sh
+brew tap tarungulati1988/why
+brew install why
+```
+
+> **Note:** The `tarungulati1988/why` tap must be set up first — see [homebrew-why](https://github.com/tarungulati1988/homebrew-why). This becomes available after the first tagged release.
+
+### pip / uv
+
+```sh
+pip install git-why
+# or
+uv tool install git-why
+```
+
+The PyPI package is `git-why`; the CLI command installed is `why`.
+
+### From source
+
+```sh
+git clone https://github.com/tarungulati1988/why.git
+cd why
+pip install -e ".[dev]"
+```
+
+See [Development](#development) for the full local setup.
+
+### After installing — set your API key
+
+```sh
+export GROQ_API_KEY=your_key_here
+```
 
 ## Usage
 
 ### Prerequisites
 
-Set your Groq API key (default LLM backend):
-
-```bash
-export GROQ_API_KEY=your_key_here
-```
+Set `GROQ_API_KEY` before running (see [Install](#install) above).
 
 By default `why` uses Groq as the LLM provider. The active provider is controlled by `WHY_LLM_PROVIDER` (default: `groq`). Currently only `groq` is supported — other providers are planned.
 
