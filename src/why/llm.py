@@ -80,7 +80,7 @@ class GroqBackend:
     def __init__(self, api_key: str) -> None:
         self._client = groq_sdk.Groq(api_key=api_key)
 
-    def chat(self, model: str, payload: list[dict[str, Any]], **_extra: Any) -> ChatResult:
+    def chat(self, model: str, payload: list[Any], **_extra: Any) -> ChatResult:
         try:
             r = self._client.chat.completions.create(model=model, messages=payload)
         except groq_sdk.RateLimitError as e:
@@ -156,7 +156,7 @@ class LLMClient:
         verbose:  When True, log token usage at DEBUG level via "why.llm".
         """
         # Build the messages payload once; reused for every attempt.
-        payload: list[dict[str, Any]] = [
+        payload: list[Any] = [
             {"role": "system", "content": system},
             *[{"role": m.role, "content": m.content} for m in messages],
         ]

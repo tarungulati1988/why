@@ -21,7 +21,7 @@ class Backend(Protocol):
     that don't recognise a kwarg should silently ignore it.
     """
 
-    def chat(self, model: str, payload: list[dict[str, Any]], **extra: Any) -> ChatResult:
+    def chat(self, model: str, payload: list[Any], **extra: Any) -> ChatResult:
         """Send a chat completion and return a ChatResult.
 
         Retryable failures (rate limit, transient server error, timeout) MUST be
