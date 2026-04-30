@@ -173,7 +173,11 @@ class LLMClient:
             except LLMTimeoutError as exc:
                 last_exc = exc
             else:
-                if verbose and result.prompt_tokens is not None and result.completion_tokens is not None:
+                if (
+                    verbose
+                    and result.prompt_tokens is not None
+                    and result.completion_tokens is not None
+                ):
                     total = result.total_tokens if result.total_tokens is not None else (
                         result.prompt_tokens + result.completion_tokens
                     )

@@ -8,10 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
-from why._backends.base import Backend, ChatResult
-
+from why._backends.base import ChatResult
 
 # ---------------------------------------------------------------------------
 # ChatResult

@@ -297,7 +297,7 @@ def test_message_invalid_role_raises_value_error() -> None:
 def test_retry_loop_provider_agnostic_succeeds_after_transient(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Inject a fake Backend that raises LLMRateLimitError 3× then returns a ChatResult.
+    """Inject a fake Backend that raises LLMRateLimitError 3x then returns a ChatResult.
 
     Confirms LLMClient.complete() retries on our typed exception (not groq's), uses
     exponential back-off, and returns the eventual content.
