@@ -12,7 +12,9 @@ import time
 from dataclasses import dataclass
 from typing import Any, Literal
 
-import groq as groq_sdk
+import groq as groq_sdk  # KEEP — tests patch why.llm.groq_sdk.Groq
+
+from why._backends.base import Backend, ChatResult
 
 logger = logging.getLogger("why.llm")
 
@@ -68,6 +70,41 @@ class LLMTimeoutError(LLMError):
 
 
 # ---------------------------------------------------------------------------
+# GroqBackend
+# ---------------------------------------------------------------------------
+
+
+class GroqBackend:
+    """Groq-specific Backend. Translates groq_sdk exceptions to LLMError types."""
+
+    def __init__(self, api_key: str) -> None:
+        self._client = groq_sdk.Groq(api_key=api_key)
+
+    def chat(self, model: str, payload: list[Any], **_extra: Any) -> ChatResult:
+        try:
+            r = self._client.chat.completions.create(model=model, messages=payload)
+        except groq_sdk.RateLimitError as e:
+            raise LLMRateLimitError(str(e)) from e
+        except groq_sdk.APITimeoutError as e:
+            raise LLMTimeoutError(str(e)) from e
+        except groq_sdk.APIStatusError as e:
+            if e.status_code in _RETRYABLE_STATUS:
+                raise LLMServerError(f"status {e.status_code}") from e
+            raise LLMError(f"API error {e.status_code}") from e
+
+        content = r.choices[0].message.content
+        if content is None:
+            raise LLMError("model returned no text content")
+        u = r.usage
+        return ChatResult(
+            content=content,
+            prompt_tokens=u.prompt_tokens if u else None,
+            completion_tokens=u.completion_tokens if u else None,
+            total_tokens=u.total_tokens if u else None,
+        )
+
+
+# ---------------------------------------------------------------------------
 # LLMClient
 # ---------------------------------------------------------------------------
 
@@ -97,8 +134,7 @@ class LLMClient:
             api_key = os.getenv("GROQ_API_KEY")
             if not api_key:
                 raise LLMMissingKeyError("GROQ_API_KEY not set")
-            # Instantiate the Groq SDK client; stored for reuse across calls.
-            self._client = groq_sdk.Groq(api_key=api_key)
+            self._backend: Backend = GroqBackend(api_key)
         elif resolved_provider == "anthropic":
             raise NotImplementedError("anthropic backend not yet implemented")
         elif resolved_provider == "openai":
@@ -120,7 +156,6 @@ class LLMClient:
         verbose:  When True, log token usage at DEBUG level via "why.llm".
         """
         # Build the messages payload once; reused for every attempt.
-        # Typed as list[Any] to satisfy the Groq SDK's union message param type.
         payload: list[Any] = [
             {"role": "system", "content": system},
             *[{"role": m.role, "content": m.content} for m in messages],
@@ -130,54 +165,38 @@ class LLMClient:
 
         for attempt in range(_MAX_RETRIES + 1):  # attempt 0 … _MAX_RETRIES
             try:
-                response = self._client.chat.completions.create(
-                    model=self.model,
-                    messages=payload,
-                )
-
-                # Log token usage when verbose mode is requested.
-                if verbose and response.usage is not None:
-                    usage = response.usage
+                result = self._backend.chat(self.model, payload)
+            except LLMRateLimitError as exc:
+                last_exc = exc
+            except LLMServerError as exc:
+                last_exc = exc
+            except LLMTimeoutError as exc:
+                last_exc = exc
+            else:
+                if (
+                    verbose
+                    and result.prompt_tokens is not None
+                    and result.completion_tokens is not None
+                ):
+                    total = result.total_tokens if result.total_tokens is not None else (
+                        result.prompt_tokens + result.completion_tokens
+                    )
                     logger.debug(
                         "model=%s  prompt_tokens=%d  completion_tokens=%d  total=%d",
-                        self.model,
-                        usage.prompt_tokens,
-                        usage.completion_tokens,
-                        usage.total_tokens,
+                        self.model, result.prompt_tokens, result.completion_tokens, total,
                     )
-
-                content = response.choices[0].message.content
-                if content is None:
-                    raise LLMError("model returned no text content")
-                return content
-
-            except groq_sdk.RateLimitError as exc:
-                # 429 — server is throttling; retryable.
-                last_exc = exc
-
-            except groq_sdk.APIStatusError as exc:
-                if exc.status_code in _RETRYABLE_STATUS:
-                    # Transient server-side error (500, 503); retryable.
-                    last_exc = exc
-                else:
-                    # Non-retryable (e.g. 400 bad request, 401 unauthorized).
-                    # Expose only the status code — raw error body may contain
-                    # provider internals not appropriate to surface to callers.
-                    raise LLMError(f"API error {exc.status_code}") from exc
-
-            except groq_sdk.APITimeoutError as exc:
-                # Network timeout; retryable.
-                last_exc = exc
+                return result.content
 
             # Sleep before the next attempt using exponential back-off.
             # On the last attempt we skip sleeping because we're about to raise.
             if attempt < _MAX_RETRIES:
                 time.sleep(_BASE_DELAY * (2**attempt))
 
-        # Discriminate the final raise by inspecting the last exception type so
-        # callers can distinguish rate-limit, server error, and timeout exhaustion.
-        if isinstance(last_exc, groq_sdk.APITimeoutError):
-            raise LLMTimeoutError("max retries exceeded") from last_exc
-        if isinstance(last_exc, groq_sdk.RateLimitError):
-            raise LLMRateLimitError("max retries exceeded") from last_exc
-        raise LLMServerError("max retries exceeded") from last_exc
+        # Re-raise the last exception directly. Wrapping it as a fresh same-type
+        # instance with `from last_exc` produces a confusing chained traceback
+        # ("During handling of ... another exception of the same type occurred").
+        # Append the "max retries exceeded" context by adding a note via add_note
+        # when available (Python 3.11+).
+        assert last_exc is not None
+        last_exc.add_note("max retries exceeded")
+        raise last_exc
