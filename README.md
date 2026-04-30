@@ -51,7 +51,16 @@ export GROQ_API_KEY=your_key_here
 
 Set `GROQ_API_KEY` before running (see [Install](#install) above).
 
-By default `why` uses Groq as the LLM provider. The active provider is controlled by `WHY_LLM_PROVIDER` (default: `groq`). Currently only `groq` is supported — other providers are planned.
+By default `why` uses Groq as the LLM provider. The active provider is controlled by `WHY_LLM_PROVIDER` (default: `groq`). Two providers are currently supported:
+
+- **`groq`** (default) — Groq cloud API; requires `GROQ_API_KEY`.
+- **`openai-compatible`** — any OpenAI-compatible local server (Ollama, llama.cpp, LM Studio, vLLM, TGI, …); requires `WHY_LLM_BASE_URL`. Example with Ollama:
+
+  ```sh
+  WHY_LLM_PROVIDER=openai-compatible \
+  WHY_LLM_BASE_URL=http://localhost:11434/v1 \
+  why --model qwen2.5:3b ...
+  ```
 
 ### GitHub token (optional but recommended)
 
