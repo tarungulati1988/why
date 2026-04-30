@@ -720,3 +720,105 @@ def test_no_cache_flag_passes_pr_cache_none(existing_file: Path) -> None:
     assert result.exit_code == 0, result.output
     _, kwargs = mock_synth.call_args
     assert kwargs.get("pr_cache") is None
+
+
+# ---------------------------------------------------------------------------
+# --no-strict-citations flag tests (Strides 2 & 3)
+# ---------------------------------------------------------------------------
+
+
+def test_strict_auto_on_for_openai_compatible(existing_file: Path) -> None:
+    """provider=openai-compatible + no flag → synthesize_why called with strict=True."""
+    with (
+        patch("why.cli.Path") as mock_path_cls,
+        patch("why.cli.LLMClient") as mock_llm_cls,
+        patch("why.cli.synthesize_why", return_value="explanation") as mock_synth,
+    ):
+        mock_llm_instance = MagicMock()
+        mock_llm_instance.provider = "openai-compatible"
+        mock_llm_cls.return_value = mock_llm_instance
+        mock_path_cls.cwd.return_value = existing_file.parent
+
+        result = CliRunner().invoke(main, [str(existing_file)])
+
+    assert result.exit_code == 0, result.output
+    assert mock_synth.call_args.kwargs.get("strict") is True
+
+
+def test_strict_auto_off_for_groq(existing_file: Path) -> None:
+    """provider=groq + no flag → synthesize_why called with strict=False."""
+    with (
+        patch("why.cli.Path") as mock_path_cls,
+        patch("why.cli.LLMClient") as mock_llm_cls,
+        patch("why.cli.synthesize_why", return_value="explanation") as mock_synth,
+    ):
+        mock_llm_instance = MagicMock()
+        mock_llm_instance.provider = "groq"
+        mock_llm_cls.return_value = mock_llm_instance
+        mock_path_cls.cwd.return_value = existing_file.parent
+
+        result = CliRunner().invoke(main, [str(existing_file)])
+
+    assert result.exit_code == 0, result.output
+    assert mock_synth.call_args.kwargs.get("strict") is False
+
+
+def test_no_strict_citations_flag_opts_out(existing_file: Path) -> None:
+    """provider=openai-compatible + --no-strict-citations → strict=False."""
+    with (
+        patch("why.cli.Path") as mock_path_cls,
+        patch("why.cli.LLMClient") as mock_llm_cls,
+        patch("why.cli.synthesize_why", return_value="explanation") as mock_synth,
+    ):
+        mock_llm_instance = MagicMock()
+        mock_llm_instance.provider = "openai-compatible"
+        mock_llm_cls.return_value = mock_llm_instance
+        mock_path_cls.cwd.return_value = existing_file.parent
+
+        result = CliRunner().invoke(main, ["--no-strict-citations", str(existing_file)])
+
+    assert result.exit_code == 0, result.output
+    assert mock_synth.call_args.kwargs.get("strict") is False
+
+
+def test_no_strict_citations_no_op_for_groq(existing_file: Path) -> None:
+    """provider=groq + --no-strict-citations → strict=False (flag is no-op)."""
+    with (
+        patch("why.cli.Path") as mock_path_cls,
+        patch("why.cli.LLMClient") as mock_llm_cls,
+        patch("why.cli.synthesize_why", return_value="explanation") as mock_synth,
+    ):
+        mock_llm_instance = MagicMock()
+        mock_llm_instance.provider = "groq"
+        mock_llm_cls.return_value = mock_llm_instance
+        mock_path_cls.cwd.return_value = existing_file.parent
+
+        result = CliRunner().invoke(main, ["--no-strict-citations", str(existing_file)])
+
+    assert result.exit_code == 0, result.output
+    assert mock_synth.call_args.kwargs.get("strict") is False
+
+
+def test_citation_error_friendly_message(existing_file: Path) -> None:
+    """synthesize_why raises CitationError → friendly message, exit code 1."""
+    from why.citations import CitationError, ValidationIssue
+
+    fake_issue = ValidationIssue("unknown_sha", "abc1234", "some line")
+
+    with (
+        patch("why.cli.Path") as mock_path_cls,
+        patch("why.cli.LLMClient") as mock_llm_cls,
+        patch("why.cli.synthesize_why", side_effect=CitationError([fake_issue])),
+    ):
+        mock_llm_instance = MagicMock()
+        mock_llm_instance.provider = "openai-compatible"
+        mock_llm_cls.return_value = mock_llm_instance
+        mock_path_cls.cwd.return_value = existing_file.parent
+
+        result = CliRunner().invoke(main, [str(existing_file)])
+
+    assert result.exit_code == 1
+    # CliRunner mixes stderr into output by default; check combined output.
+    assert "Local model hallucinated citation" in result.output
+    assert "abc1234" in result.output  # offending SHA named in message
+    assert "--no-strict-citations" in result.output

@@ -1,17 +1,17 @@
 {
-  "branch": "sleipnir/issue-95-num-ctx-ollama",
+  "branch": "sleipnir/issue-96-strict-citations-local",
   "base_ref": "origin/main",
-  "base_sha": "43a54d3",
-  "merge_base": "43a54d3",
+  "base_sha": "c2af530",
+  "merge_base": "c2af530",
   "dirty_files": [".python-version"],
   "included_files": [
-    "src/why/_backends/openai_compatible.py",
-    "src/why/llm.py",
-    "tests/test_llm.py",
-    "README.md"
+    "src/why/citations.py",
+    "src/why/cli.py",
+    "tests/test_citations.py",
+    "tests/test_cli.py"
   ],
   "excluded_files": [".python-version"],
-  "issue": 95,
-  "design_doc": "docs/sleipnir/design-issue-95-num-ctx-ollama.md",
-  "phase": "review"
+  "issue": 96,
+  "design_doc": "docs/sleipnir/design-issue-96-strict-citations-local.md",
+  "phase": "execution"
 }
