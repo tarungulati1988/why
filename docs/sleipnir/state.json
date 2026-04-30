@@ -1,12 +1,12 @@
 {
-  "branch": "sleipnir/issue-82-homebrew-publish",
+  "branch": "sleipnir/issue-92-backend-protocol",
   "base_ref": "origin/main",
-  "base_sha": "bcf9824",
-  "merge_base": "bcf9824",
-  "dirty_files": [".python-version", "docs/sleipnir/design-issue-82-homebrew.md"],
-  "included_files": ["docs/sleipnir/design-issue-82-homebrew.md"],
+  "base_sha": "ddec3f76ab58a258828610924dace4bab0f37964",
+  "merge_base": "ddec3f76ab58a258828610924dace4bab0f37964",
+  "dirty_files": [".python-version", "docs/sleipnir/design-issue-92-backend-protocol.md"],
+  "included_files": ["docs/sleipnir/design-issue-92-backend-protocol.md"],
   "excluded_files": [".python-version"],
-  "issue": 82,
-  "design_doc": "docs/sleipnir/design-issue-82-homebrew.md",
+  "issue": 92,
+  "design_doc": "docs/sleipnir/design-issue-92-backend-protocol.md",
   "phase": "execution"
 }

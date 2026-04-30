@@ -287,3 +287,77 @@ def test_message_invalid_role_raises_value_error() -> None:
     """Message with an unrecognised role must raise ValueError at construction."""
     with pytest.raises(ValueError, match="must be 'user' or 'assistant'"):
         Message(role="system", content="sneaky system prompt")
+
+
+# ---------------------------------------------------------------------------
+# Test 13: retry loop is provider-agnostic — succeeds after transient
+#          LLMRateLimitError raised by a fake backend (no groq involvement).
+# ---------------------------------------------------------------------------
+
+def test_retry_loop_provider_agnostic_succeeds_after_transient(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Inject a fake Backend that raises LLMRateLimitError 3× then returns a ChatResult.
+
+    Confirms LLMClient.complete() retries on our typed exception (not groq's), uses
+    exponential back-off, and returns the eventual content.
+    """
+    from why._backends.base import ChatResult
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+
+    call_count = {"n": 0}
+
+    class FakeBackend:
+        def chat(self, model, payload, **extra):
+            call_count["n"] += 1
+            if call_count["n"] <= 3:
+                raise LLMRateLimitError("synthetic")
+            return ChatResult(content="ok", prompt_tokens=1, completion_tokens=1)
+
+    sleep_args: list[float] = []
+    def fake_sleep(s: float) -> None:
+        sleep_args.append(s)
+
+    with patch("why.llm.time.sleep", side_effect=fake_sleep):
+        # Construct a normal LLMClient (which builds a real GroqBackend), then swap it.
+        with patch("why.llm.groq_sdk.Groq", return_value=MagicMock()):
+            llm = LLMClient()
+        llm._backend = FakeBackend()  # type: ignore[assignment]
+        result = llm.complete("sys", [Message("user", "hi")])
+
+    assert result == "ok"
+    assert call_count["n"] == 4
+    assert sleep_args == [1.0, 2.0, 4.0]
+
+
+# ---------------------------------------------------------------------------
+# Test 14: non-retryable LLMError raised by a fake backend propagates immediately
+#          and time.sleep is never called.
+# ---------------------------------------------------------------------------
+
+def test_non_retryable_llm_error_propagates_without_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A plain LLMError raised by the backend must propagate on the first call."""
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+
+    call_count = {"n": 0}
+
+    class FakeBackend:
+        def chat(self, model, payload, **extra):
+            call_count["n"] += 1
+            raise LLMError("API error 400")
+
+    with patch("why.llm.time.sleep") as mock_sleep:
+        with patch("why.llm.groq_sdk.Groq", return_value=MagicMock()):
+            llm = LLMClient()
+        llm._backend = FakeBackend()  # type: ignore[assignment]
+        with pytest.raises(LLMError) as exc_info:
+            llm.complete("sys", [Message("user", "hi")])
+
+    assert type(exc_info.value) is LLMError, (
+        f"expected exact LLMError, got {type(exc_info.value).__name__}"
+    )
+    assert "API error 400" in str(exc_info.value)
+    assert call_count["n"] == 1
+    mock_sleep.assert_not_called()
