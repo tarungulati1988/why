@@ -1,21 +1,18 @@
 {
-  "branch": "sleipnir/issue-93-openai-compatible",
+  "branch": "sleipnir/issue-94-auto-shrink-context",
   "base_ref": "origin/main",
-  "base_sha": "951427b",
-  "merge_base": "951427b",
+  "base_sha": "5735857",
+  "merge_base": "5735857",
   "dirty_files": [".python-version"],
   "included_files": [
-    "docs/sleipnir/design-issue-93-openai-compatible.md",
-    "src/why/_backends/openai_compatible.py",
-    "src/why/_backends/__init__.py",
-    "src/why/llm.py",
-    "tests/test_openai_compatible_backend.py",
-    "tests/test_llm.py",
-    "pyproject.toml",
-    "uv.lock"
+    "docs/sleipnir/design-issue-94-auto-shrink.md",
+    "src/why/synth.py",
+    "tests/test_shrink.py",
+    "tests/test_synth.py",
+    "README.md"
   ],
   "excluded_files": [".python-version"],
-  "issue": 93,
-  "design_doc": "docs/sleipnir/design-issue-93-openai-compatible.md",
+  "issue": 94,
+  "design_doc": "docs/sleipnir/design-issue-94-auto-shrink.md",
   "phase": "review"
 }

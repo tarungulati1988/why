@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from tests._helpers import make_commit as _make_commit
 from why.commit import Commit
 from why.llm import LLMClient
 from why.symbols import SymbolNotFoundError
@@ -170,19 +171,6 @@ class TestResolveLineRangeFileOnly:
 # ---------------------------------------------------------------------------
 
 # Fixture helpers
-
-def _make_commit(sha: str) -> Commit:
-    """Return a minimal Commit with the given SHA, suitable for testing."""
-    return Commit(
-        sha=sha,
-        author_name="Alice",
-        author_email="alice@example.com",
-        date=datetime(2024, 1, 1, tzinfo=timezone.utc),  # noqa: UP017 — datetime.UTC absent in 3.11.0b1
-        subject=f"commit {sha[:7]}",
-        body="",
-        parents=(),
-    )
-
 
 # Patch targets — all patched on the synth module so the function uses them
 _PATCH_FILE_HISTORY = "why.synth.get_file_history"
@@ -963,6 +951,7 @@ class TestSynthesizeWhyTwoPass:
     def test_synthesize_why_two_pass_makes_second_llm_call(self, tmp_path: Path) -> None:
         commits, _f, target = self._make_setup(tmp_path)
         mock_llm = MagicMock(spec=LLMClient)
+        mock_llm.provider = "groq"
         mock_llm.complete.side_effect = [
             "first pass output",
             "## 🔍 Grounding Check\n\n| Claim | Verdict |\n|---|---|\n| foo | supported |",
@@ -988,6 +977,7 @@ class TestSynthesizeWhyTwoPass:
             "## 🔍 Grounding Check\n\n| Claim | Verdict |\n|---|---|\n| foo | supported |"
         )
         mock_llm = MagicMock(spec=LLMClient)
+        mock_llm.provider = "groq"
         mock_llm.complete.side_effect = ["first pass output", grounding_output]
 
         with (
@@ -1007,6 +997,7 @@ class TestSynthesizeWhyTwoPass:
     def test_synthesize_why_single_pass_unchanged(self, tmp_path: Path) -> None:
         commits, _f, target = self._make_setup(tmp_path)
         mock_llm = MagicMock(spec=LLMClient)
+        mock_llm.provider = "groq"
         mock_llm.complete.return_value = "single pass output"
 
         with (
@@ -1029,6 +1020,7 @@ class TestSynthesizeWhyTwoPass:
         commits, _f, target = self._make_setup(tmp_path)
         first_pass_text = "first pass output with timeline"
         mock_llm = MagicMock(spec=LLMClient)
+        mock_llm.provider = "groq"
         mock_llm.complete.side_effect = [
             first_pass_text,
             "## 🔍 Grounding Check\n\nok",
@@ -1625,3 +1617,161 @@ class TestSynthesizeWhyBriefFlag:
 
         call_kwargs = mock_build_prompt.call_args.kwargs
         assert call_kwargs.get("brief") is False
+
+
+# ---------------------------------------------------------------------------
+# Stride 3: shrink integration tests — warning emission and call-through
+# ---------------------------------------------------------------------------
+
+_PATCH_SHRINK = "why.synth._shrink_for_budget"
+_PATCH_RESOLVE_MAX_CTX = "why.synth._resolve_max_ctx"
+
+
+class TestSynthesizeWhyShrinkIntegration:
+    """synthesize_why wires _shrink_for_budget and emits the user-facing warning."""
+
+    def _make_setup(self, tmp_path: Path, n: int = 3):
+        commits = [_make_commit(f"shrk{i:04d}" * 10) for i in range(n)]
+        f = _make_py_file(tmp_path, "foo.py", "x = 1\n")
+        target = Target(file=f)
+        return commits, f, target
+
+    def test_synthesize_no_shrink_when_max_ctx_unset(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        """provider=groq, WHY_LLM_MAX_CTX unset → _resolve_max_ctx returns None →
+        no shrink call, no warning, full commit list reaches build_why_prompt."""
+        monkeypatch.delenv("WHY_LLM_MAX_CTX", raising=False)
+
+        commits, _f, target = self._make_setup(tmp_path, n=3)
+        llm = MagicMock()
+        llm.provider = "groq"
+        llm.complete.return_value = "answer"
+        captured: list = []
+
+        def fake_build_prompt(t, code, cwprs, **kwargs):
+            captured.extend(cwprs)
+            return [MagicMock()]
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT, return_value=commits),
+            patch(_PATCH_DIFF, return_value="small diff"),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, side_effect=fake_build_prompt),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+        ):
+            synthesize_why(target, tmp_path, llm)
+
+        # All 3 commits must reach build_why_prompt unchanged
+        assert len(captured) == 3
+        # No warning emitted to stderr
+        err = capsys.readouterr().err
+        assert "Auto-shrunk" not in err
+
+    def test_synthesize_emits_warning_when_shrink_fires(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        """WHY_LLM_MAX_CTX=100 (tiny) → shrink fires → warning with
+        'Auto-shrunk to fit context budget' but WITHOUT
+        'Set WHY_LLM_MAX_CTX=0 to disable.' (user explicitly set the env)."""
+        monkeypatch.setenv("WHY_LLM_MAX_CTX", "100")
+
+        commits, _f, target = self._make_setup(tmp_path, n=3)
+        llm = MagicMock()
+        llm.provider = "groq"
+        llm.complete.return_value = "answer"
+
+        # Fake shrink: drops 2, truncates 1
+        from why.prompts import CommitWithPR as CwPR
+        remaining = [
+            CwPR(commit=commits[0], diff="d", pr_body=None, pr_number=None, pr_title=None)
+        ]
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT, return_value=commits),
+            patch(_PATCH_DIFF, return_value="diff text"),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, return_value=[MagicMock()]),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+            patch(_PATCH_SHRINK, return_value=(remaining, 2, 1)),
+        ):
+            synthesize_why(target, tmp_path, llm)
+
+        err = capsys.readouterr().err
+        assert "Auto-shrunk to fit context budget" in err
+        assert "dropped 2 commit(s)" in err
+        assert "truncated 1 diff(s)" in err
+        # User explicitly set WHY_LLM_MAX_CTX → disable hint must NOT appear
+        assert "Set WHY_LLM_MAX_CTX=0 to disable." not in err
+
+    def test_synthesize_emits_warning_with_disable_hint_when_default_kicks_in(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        """llm.provider=openai-compatible + WHY_LLM_MAX_CTX unset → _resolve_max_ctx
+        returns 4096 (default) → shrink fires → warning includes 'Set WHY_LLM_MAX_CTX=0 to disable.'
+        because the user did NOT explicitly set WHY_LLM_MAX_CTX."""
+        monkeypatch.delenv("WHY_LLM_MAX_CTX", raising=False)
+
+        commits, _f, target = self._make_setup(tmp_path, n=3)
+        llm = MagicMock()
+        llm.provider = "openai-compatible"
+        llm.complete.return_value = "answer"
+
+        from why.prompts import CommitWithPR as CwPR
+        remaining = [
+            CwPR(commit=commits[0], diff="d", pr_body=None, pr_number=None, pr_title=None)
+        ]
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT, return_value=commits),
+            patch(_PATCH_DIFF, return_value="diff text"),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, return_value=[MagicMock()]),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+            patch(_PATCH_SHRINK, return_value=(remaining, 1, 0)),
+        ):
+            synthesize_why(target, tmp_path, llm)
+
+        err = capsys.readouterr().err
+        assert "Auto-shrunk to fit context budget" in err
+        # Default kicked in (WHY_LLM_MAX_CTX was unset) → disable hint MUST appear
+        assert "Set WHY_LLM_MAX_CTX=0 to disable." in err
+
+    def test_synthesize_no_warning_when_shrink_no_op(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        """WHY_LLM_MAX_CTX=100000 (huge) → shrink is called but drops=0 and truncated=0
+        → no warning emitted."""
+        monkeypatch.setenv("WHY_LLM_MAX_CTX", "100000")
+
+        commits, _f, target = self._make_setup(tmp_path, n=2)
+        llm = MagicMock()
+        llm.provider = "groq"
+        llm.complete.return_value = "answer"
+
+        from why.prompts import CommitWithPR as CwPR
+        full_list = [
+            CwPR(commit=c, diff="small diff", pr_body=None, pr_number=None, pr_title=None)
+            for c in commits
+        ]
+
+        with (
+            patch(_PATCH_FILE_HISTORY, return_value=commits),
+            patch(_PATCH_SELECT, return_value=commits),
+            patch(_PATCH_DIFF, return_value="small diff"),
+            patch(_PATCH_EXTRACT_CODE, return_value="code"),
+            patch(_PATCH_RESOLVE_RANGE, return_value=None),
+            patch(_PATCH_BUILD_PROMPT, return_value=[MagicMock()]),
+            patch(_PATCH_GET_REPO_URL, return_value=None),
+            patch(_PATCH_SHRINK, return_value=(full_list, 0, 0)),
+        ):
+            synthesize_why(target, tmp_path, llm)
+
+        err = capsys.readouterr().err
+        assert "Auto-shrunk" not in err
