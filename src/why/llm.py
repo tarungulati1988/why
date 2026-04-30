@@ -36,6 +36,43 @@ _MAX_RETRIES = 3
 # Base delay in seconds; doubles each attempt: 1s → 2s → 4s.
 _BASE_DELAY = 1.0
 
+_DEFAULT_CTX_OPENAI_COMPAT = 4096
+
+
+def _resolve_max_ctx(provider: str) -> int | None:
+    """Resolve effective WHY_LLM_MAX_CTX target.
+
+    Resolution rules:
+      - WHY_LLM_MAX_CTX set to a positive integer → return that int.
+      - WHY_LLM_MAX_CTX set to "0" → return None (explicit disable).
+      - WHY_LLM_MAX_CTX unset:
+          - provider == "openai-compatible" → return _DEFAULT_CTX_OPENAI_COMPAT (default).
+          - Otherwise → return None.
+      - WHY_LLM_MAX_CTX set to a negative integer or non-integer string → return None
+        and log a single warning via the existing logger; do NOT raise.
+    """
+    raw = os.environ.get("WHY_LLM_MAX_CTX")
+
+    if raw is None:
+        if provider == "openai-compatible":
+            return _DEFAULT_CTX_OPENAI_COMPAT
+        return None
+
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning("WHY_LLM_MAX_CTX=%r is not a valid integer; ignoring", raw)
+        return None
+
+    if value == 0:
+        return None  # explicit disable
+
+    if value < 0:
+        logger.warning("WHY_LLM_MAX_CTX=%d is negative; ignoring", value)
+        return None
+
+    return value
+
 
 # ---------------------------------------------------------------------------
 # Public types
@@ -155,10 +192,32 @@ class LLMClient:
                     "not set; prompt data will be sent without credentials.",
                     base_url,
                 )
+
+            # Resolve num_ctx: explicit WHY_LLM_NUM_CTX takes priority.
+            # Empty string is treated as unset (consistent with shell convention).
+            raw_num_ctx = os.getenv("WHY_LLM_NUM_CTX")
+            num_ctx: int | None
+            if raw_num_ctx:  # non-None and non-empty
+                try:
+                    num_ctx = int(raw_num_ctx)
+                except ValueError:
+                    raise LLMError(
+                        f"WHY_LLM_NUM_CTX must be a positive integer, got {raw_num_ctx!r}"
+                    ) from None
+                if num_ctx < 1:
+                    raise LLMError(
+                        f"WHY_LLM_NUM_CTX must be a positive integer, got {raw_num_ctx!r}"
+                    )
+            else:
+                # Auto-couple: use _resolve_max_ctx (now local — no circular import).
+                num_ctx = _resolve_max_ctx(resolved_provider)
+
             # Lazy import — keeps `openai` an importable-but-not-imported dependency
             # for users who only use Groq.
             from why._backends.openai_compatible import OpenAICompatibleBackend
-            self._backend = OpenAICompatibleBackend(base_url=base_url, api_key=api_key)
+            self._backend = OpenAICompatibleBackend(
+                base_url=base_url, api_key=api_key, num_ctx=num_ctx
+            )
         elif resolved_provider == "anthropic":
             raise NotImplementedError("anthropic backend not yet implemented")
         elif resolved_provider == "openai":

@@ -1,18 +1,17 @@
 {
-  "branch": "sleipnir/issue-94-auto-shrink-context",
+  "branch": "sleipnir/issue-95-num-ctx-ollama",
   "base_ref": "origin/main",
-  "base_sha": "5735857",
-  "merge_base": "5735857",
+  "base_sha": "43a54d3",
+  "merge_base": "43a54d3",
   "dirty_files": [".python-version"],
   "included_files": [
-    "docs/sleipnir/design-issue-94-auto-shrink.md",
-    "src/why/synth.py",
-    "tests/test_shrink.py",
-    "tests/test_synth.py",
+    "src/why/_backends/openai_compatible.py",
+    "src/why/llm.py",
+    "tests/test_llm.py",
     "README.md"
   ],
   "excluded_files": [".python-version"],
-  "issue": 94,
-  "design_doc": "docs/sleipnir/design-issue-94-auto-shrink.md",
+  "issue": 95,
+  "design_doc": "docs/sleipnir/design-issue-95-num-ctx-ollama.md",
   "phase": "review"
 }

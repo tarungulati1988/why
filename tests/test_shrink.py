@@ -10,7 +10,8 @@ import logging
 import pytest
 
 from tests._helpers import make_cwpr as _make_cwpr
-from why.synth import _estimate_tokens, _resolve_max_ctx, _shrink_for_budget
+from why.llm import _resolve_max_ctx
+from why.synth import _estimate_tokens, _shrink_for_budget
 
 # ---------------------------------------------------------------------------
 # _estimate_tokens

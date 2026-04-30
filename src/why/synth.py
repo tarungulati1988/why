@@ -17,7 +17,7 @@ from why.diff import get_commit_diff
 from why.git import GitError
 from why.github import GitHubAuthError, GitHubClient
 from why.history import get_file_history, get_line_history
-from why.llm import LLMClient, Message
+from why.llm import LLMClient, Message, _resolve_max_ctx
 from why.prompts import (
     GROUNDING_SYSTEM_PROMPT,
     CommitWithPR,
@@ -41,7 +41,6 @@ _DEEP_COST_WARN_THRESHOLD = 0.50
 
 _MAX_DIFF_LINES = 80
 _CTX_HEADROOM = 0.85
-_DEFAULT_CTX_OPENAI_COMPAT = 4096
 
 
 def _estimate_tokens(text: str) -> int:
@@ -101,40 +100,6 @@ def _shrink_for_budget(
 
     return new_commits, dropped, truncated
 
-
-def _resolve_max_ctx(provider: str) -> int | None:
-    """Resolve effective WHY_LLM_MAX_CTX target.
-
-    Resolution rules:
-      - WHY_LLM_MAX_CTX set to a positive integer → return that int.
-      - WHY_LLM_MAX_CTX set to "0" → return None (explicit disable).
-      - WHY_LLM_MAX_CTX unset:
-          - provider == "openai-compatible" → return _DEFAULT_CTX_OPENAI_COMPAT (default).
-          - Otherwise → return None.
-      - WHY_LLM_MAX_CTX set to a negative integer or non-integer string → return None
-        and log a single warning via the existing `_log` logger; do NOT raise.
-    """
-    raw = os.environ.get("WHY_LLM_MAX_CTX")
-
-    if raw is None:
-        if provider == "openai-compatible":
-            return _DEFAULT_CTX_OPENAI_COMPAT
-        return None
-
-    try:
-        value = int(raw)
-    except ValueError:
-        _log.warning("WHY_LLM_MAX_CTX=%r is not a valid integer; ignoring", raw)
-        return None
-
-    if value == 0:
-        return None  # explicit disable
-
-    if value < 0:
-        _log.warning("WHY_LLM_MAX_CTX=%d is negative; ignoring", value)
-        return None
-
-    return value
 
 
 def _estimate_prompt_cost(system: str, messages: list[Message]) -> float:

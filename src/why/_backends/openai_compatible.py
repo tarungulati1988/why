@@ -1,6 +1,12 @@
-"""OpenAI-compatible backend — works with Ollama, llama.cpp, LM Studio, vLLM, TGI."""
+"""OpenAI-compatible backend — works with Ollama, llama.cpp, LM Studio, vLLM, TGI.
+
+Note: the optional ``num_ctx`` parameter sets Ollama's KV-cache size via
+``extra_body``. Other servers ignore it; vLLM in strict-schema mode may reject
+it. Leave unset for non-Ollama backends.
+"""
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import openai
@@ -14,16 +20,23 @@ from why._errors import (
     LLMTimeoutError,
 )
 
+logger = logging.getLogger("why.llm")
+
 
 class OpenAICompatibleBackend:
     """Backend for any OpenAI-compatible /v1/chat/completions server."""
 
-    def __init__(self, base_url: str, api_key: str) -> None:
+    def __init__(self, base_url: str, api_key: str, num_ctx: int | None = None) -> None:
         self._client = openai.OpenAI(base_url=base_url, api_key=api_key)
+        self._num_ctx = num_ctx
 
     def chat(self, model: str, payload: list[Any], **_extra: Any) -> ChatResult:
+        kwargs: dict[str, Any] = {"model": model, "messages": payload}
+        if self._num_ctx is not None:
+            kwargs["extra_body"] = {"options": {"num_ctx": self._num_ctx}}
+            logger.debug("num_ctx=%d (Ollama)", self._num_ctx)
         try:
-            r = self._client.chat.completions.create(model=model, messages=payload)
+            r = self._client.chat.completions.create(**kwargs)
         except openai.RateLimitError as e:
             raise LLMRateLimitError(str(e)) from e
         except openai.APITimeoutError as e:

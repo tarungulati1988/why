@@ -70,7 +70,17 @@ Local 3B-class models often have small context windows (Ollama's default `num_ct
 - When unset, defaults to **`4096` for `openai-compatible`** providers and is **disabled for `groq`**.
 - When shrinking fires, `why` drops the oldest commits first and truncates each remaining diff to 80 lines, then prints a single warning to stderr describing what was dropped.
 - `--max-commits` is honored *before* shrinking (user cap wins).
-- **Ollama `num_ctx`:** Ollama's default `num_ctx` is 2048. Bump it (Modelfile `PARAMETER num_ctx 4096` or set per-request) to match `WHY_LLM_MAX_CTX`'s default of 4096 — otherwise the prompt still overflows.
+
+#### Ollama context window (`num_ctx`)
+
+`WHY_LLM_MAX_CTX` controls how much context `why` assembles client-side. `WHY_LLM_NUM_CTX` tells Ollama how large a KV cache to allocate server-side. They are kept in sync automatically — usually you only need to set `WHY_LLM_MAX_CTX`.
+
+Ollama defaults to `num_ctx=2048` regardless of the model's actual capability. Other OpenAI-compatible servers (vLLM, llama.cpp, LM Studio, TGI) ignore unknown options and are unaffected.
+
+- **`WHY_LLM_NUM_CTX`** — when set on `openai-compatible`, passed to the server as `extra_body={"options": {"num_ctx": N}}`. Must be a positive integer; `0`, negative, or non-integer values raise an error at startup.
+- **Auto-couple to `WHY_LLM_MAX_CTX`** — when `WHY_LLM_NUM_CTX` is unset and a `WHY_LLM_MAX_CTX` is in effect (whether user-set or the auto-default `4096`), `why` uses that value as `num_ctx`. The auto-shrink budget and the server's allocated context stay matched without manual bookkeeping. (So with stock settings on openai-compatible, num_ctx is sent as 4096.)
+- **Disable** — set `WHY_LLM_NUM_CTX` explicitly to override the auto-couple, or set `WHY_LLM_MAX_CTX=0` to disable shrinking entirely (which also disables auto-couple).
+- **No effect on `groq`** — silently ignored.
 
 ### GitHub token (optional but recommended)
 
