@@ -62,6 +62,16 @@ By default `why` uses Groq as the LLM provider. The active provider is controlle
   why --model qwen2.5:3b ...
   ```
 
+#### Auto-shrink for small context windows
+
+Local 3B-class models often have small context windows (Ollama's default `num_ctx` is 2048). `why` auto-shrinks the prompt to fit:
+
+- **`WHY_LLM_MAX_CTX`** — token budget for prompt assembly. Set to a positive integer to enable; set to `0` to disable.
+- When unset, defaults to **`4096` for `openai-compatible`** providers and is **disabled for `groq`**.
+- When shrinking fires, `why` drops the oldest commits first and truncates each remaining diff to 80 lines, then prints a single warning to stderr describing what was dropped.
+- `--max-commits` is honored *before* shrinking (user cap wins).
+- **Ollama `num_ctx`:** Ollama's default `num_ctx` is 2048. Bump it (Modelfile `PARAMETER num_ctx 4096` or set per-request) to match `WHY_LLM_MAX_CTX`'s default of 4096 — otherwise the prompt still overflows.
+
 ### GitHub token (optional but recommended)
 
 `why` fetches PR metadata from the GitHub API. It discovers a token automatically:

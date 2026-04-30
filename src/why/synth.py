@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import urllib.parse
+from dataclasses import replace
 from pathlib import Path
 
 import click
@@ -36,6 +38,103 @@ _LINE_WINDOW = 20
 
 _COST_PER_1K_TOKENS = 0.0008  # llama-3.3-70b Groq approximate rate
 _DEEP_COST_WARN_THRESHOLD = 0.50
+
+_MAX_DIFF_LINES = 80
+_CTX_HEADROOM = 0.85
+_DEFAULT_CTX_OPENAI_COMPAT = 4096
+
+
+def _estimate_tokens(text: str) -> int:
+    """Cheap token estimate: chars/4. Good enough — the budget reserves 15% headroom."""
+    return len(text) // 4
+
+
+def _shrink_for_budget(
+    commits: list[CommitWithPR],
+    current_code: str,
+    system_prompt: str,
+    target_tokens: int,
+) -> tuple[list[CommitWithPR], int, int]:
+    """Shrink commits to fit `target_tokens` budget for context-constrained models.
+
+    Strategy:
+      1. Truncate any diff longer than 80 lines to first 80 + sentinel.
+      2. Drop oldest commits (commits[0] first) until total estimated
+         tokens fit `target_tokens * 0.85` (15% headroom for the model's reply).
+
+    Returns: (shrunk_commits, dropped_count, truncated_count).
+
+    `commits` is expected to be sorted oldest-first (synthesize_why sorts this way).
+    """
+    truncated = 0
+    new_commits: list[CommitWithPR] = []
+    for c in commits:
+        lines = c.diff.splitlines()
+        if len(lines) > _MAX_DIFF_LINES:
+            dropped_lines = len(lines) - _MAX_DIFF_LINES
+            new_diff = (
+                "\n".join(lines[:_MAX_DIFF_LINES])
+                + f"\n... [truncated {dropped_lines} lines]"
+            )
+            c = replace(c, diff=new_diff)
+            truncated += 1
+        new_commits.append(c)
+
+    headroom = int(target_tokens * _CTX_HEADROOM)
+    fixed = _estimate_tokens(system_prompt) + _estimate_tokens(current_code)
+    budget = headroom - fixed
+
+    def _commit_cost(c: CommitWithPR) -> int:
+        return (
+            _estimate_tokens(c.diff)
+            + _estimate_tokens(c.commit.subject)
+            + _estimate_tokens(c.pr_body or "")
+            + _estimate_tokens(c.pr_title or "")
+        )
+
+    dropped = 0
+    total = sum(_commit_cost(c) for c in new_commits)
+    while new_commits and total > budget:
+        total -= _commit_cost(new_commits[0])
+        new_commits.pop(0)
+        dropped += 1
+
+    return new_commits, dropped, truncated
+
+
+def _resolve_max_ctx(provider: str) -> int | None:
+    """Resolve effective WHY_LLM_MAX_CTX target.
+
+    Resolution rules:
+      - WHY_LLM_MAX_CTX set to a positive integer → return that int.
+      - WHY_LLM_MAX_CTX set to "0" → return None (explicit disable).
+      - WHY_LLM_MAX_CTX unset:
+          - provider == "openai-compatible" → return _DEFAULT_CTX_OPENAI_COMPAT (default).
+          - Otherwise → return None.
+      - WHY_LLM_MAX_CTX set to a negative integer or non-integer string → return None
+        and log a single warning via the existing `_log` logger; do NOT raise.
+    """
+    raw = os.environ.get("WHY_LLM_MAX_CTX")
+
+    if raw is None:
+        if provider == "openai-compatible":
+            return _DEFAULT_CTX_OPENAI_COMPAT
+        return None
+
+    try:
+        value = int(raw)
+    except ValueError:
+        _log.warning("WHY_LLM_MAX_CTX=%r is not a valid integer; ignoring", raw)
+        return None
+
+    if value == 0:
+        return None  # explicit disable
+
+    if value < 0:
+        _log.warning("WHY_LLM_MAX_CTX=%d is negative; ignoring", value)
+        return None
+
+    return value
 
 
 def _estimate_prompt_cost(system: str, messages: list[Message]) -> float:
@@ -192,6 +291,8 @@ def synthesize_why(
         key_commits = capped
     else:
         key_commits = history if len(history) < 3 else select_key_commits(history, prs)
+        if max_commits is not None:
+            key_commits = key_commits[:max_commits]
 
     # Sort oldest-first so the LLM sees chronological order regardless of path.
     key_commits = sorted(key_commits, key=lambda c: c.date)
@@ -249,9 +350,25 @@ def synthesize_why(
             )
         )
 
-    messages = build_why_prompt(target, current_code, commits_with_prs, brief=brief)
     repo_url = _get_repo_url(repo)
     system_prompt = build_system_prompt(repo_url)
+
+    target_ctx = _resolve_max_ctx(llm.provider)
+    if target_ctx is not None:
+        user_set = os.getenv("WHY_LLM_MAX_CTX") is not None
+        commits_with_prs, dropped, truncated = _shrink_for_budget(
+            commits_with_prs, current_code, system_prompt, target_ctx
+        )
+        if dropped or truncated:
+            msg = (
+                f"⚠ Auto-shrunk to fit context budget: dropped {dropped} commit(s), "
+                f"truncated {truncated} diff(s)."
+            )
+            if not user_set:
+                msg += " Set WHY_LLM_MAX_CTX=0 to disable."
+            click.echo(msg, err=True)
+
+    messages = build_why_prompt(target, current_code, commits_with_prs, brief=brief)
 
     if deep:
         estimated_cost = _estimate_prompt_cost(system_prompt, messages)

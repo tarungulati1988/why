@@ -118,6 +118,9 @@ class LLMClient:
       LM Studio, vLLM, TGI, …). Requires ``WHY_LLM_BASE_URL`` (e.g.
       ``http://localhost:11434/v1``). ``WHY_LLM_API_KEY`` is optional; defaults
       to ``"not-needed"`` for servers that do not require authentication.
+
+    After construction, ``self.provider`` holds the resolved provider string so
+    callers can branch on it without re-reading env vars.
     """
 
     def __init__(
@@ -129,6 +132,7 @@ class LLMClient:
 
         # Resolve provider: param → env var → default "groq"
         resolved_provider = provider or os.getenv("WHY_LLM_PROVIDER") or "groq"
+        self.provider = resolved_provider
 
         if resolved_provider == "groq":
             # Read the API key from the environment at construction time so
