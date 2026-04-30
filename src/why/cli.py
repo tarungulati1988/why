@@ -7,6 +7,7 @@ import click
 
 from why import __version__
 from why.cache import PRCache
+from why.citations import CitationError
 from why.git import GitError
 from why.github import GitHubClient, detect_github_token
 from why.llm import LLMClient, LLMError
@@ -79,6 +80,15 @@ ARGUMENTS:
     default=False,
     help="Disable local PR metadata cache and fetch fresh from GitHub.",
 )
+@click.option(
+    "--no-strict-citations",
+    is_flag=True,
+    default=False,
+    help=(
+        "Allow citations to SHAs/PRs not in the LLM's input context. "
+        "Strict mode is auto-enabled for local providers; this flag opts out."
+    ),
+)
 def main(
     target_spec: str,
     extra: str | None,
@@ -89,6 +99,7 @@ def main(
     deep: bool,
     max_commits: int | None,
     no_cache: bool,
+    no_strict_citations: bool,
 ) -> None:
     """Explain why code is the way it is via git history and LLM synthesis."""
     cwd = Path.cwd()
@@ -126,6 +137,7 @@ def main(
 
     try:
         llm = LLMClient(model)
+        strict = (llm.provider == "openai-compatible") and not no_strict_citations
         output = synthesize_why(
             target, cwd, llm,
             gh=gh_client,
@@ -134,7 +146,16 @@ def main(
             brief=brief,
             deep=deep,
             max_commits=max_commits,
+            strict=strict,
         )
+    except CitationError as exc:
+        first = exc.issues[0]
+        click.echo(
+            f"⚠ Local model hallucinated citation: {first.value}. "
+            f"Try --no-strict-citations to allow, or switch to a larger model.",
+            err=True,
+        )
+        sys.exit(1)
     except (LLMError, GitError, SymbolNotFoundError) as exc:
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)

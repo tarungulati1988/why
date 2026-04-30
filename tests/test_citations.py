@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from why.citations import validate_citations
+from why.citations import CitationError, validate_citations
 
 # ---------------------------------------------------------------------------
 # Shared golden fixtures
@@ -183,3 +183,41 @@ def test_sha_check_skipped_when_known_shas_empty() -> None:
     output = f"Changed in {UNKNOWN_SHA} for reasons."
     issues = validate_citations(output, known_shas=set(), known_prs=set())
     assert issues == []
+
+
+# ---------------------------------------------------------------------------
+# 12. strict=True raises CitationError (typed exception, not bare ValueError)
+# ---------------------------------------------------------------------------
+
+def test_strict_raises_citation_error() -> None:
+    """strict=True raises CitationError, not a bare ValueError."""
+    output = f"Commit {UNKNOWN_SHA} is suspicious."
+    with pytest.raises(CitationError):
+        validate_citations(output, {KNOWN_SHA_FULL}, set(), strict=True)
+
+
+# ---------------------------------------------------------------------------
+# 13. CitationError carries the issues list
+# ---------------------------------------------------------------------------
+
+def test_citation_error_carries_issues() -> None:
+    """Caught CitationError exposes .issues with the ValidationIssue objects."""
+    output = f"Commit {UNKNOWN_SHA} is suspicious."
+    with pytest.raises(CitationError) as exc_info:
+        validate_citations(output, {KNOWN_SHA_FULL}, set(), strict=True)
+    err = exc_info.value
+    assert len(err.issues) == 1
+    assert err.issues[0].kind == "unknown_sha"
+    assert err.issues[0].value == UNKNOWN_SHA
+
+
+# ---------------------------------------------------------------------------
+# 14. CitationError is a ValueError subclass (backwards compat)
+# ---------------------------------------------------------------------------
+
+def test_citation_error_is_value_error() -> None:
+    """CitationError is a subclass of ValueError for backwards compatibility."""
+    output = f"Commit {UNKNOWN_SHA} is suspicious."
+    with pytest.raises(CitationError) as exc_info:
+        validate_citations(output, {KNOWN_SHA_FULL}, set(), strict=True)
+    assert isinstance(exc_info.value, ValueError)

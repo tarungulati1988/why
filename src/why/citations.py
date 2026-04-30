@@ -20,6 +20,14 @@ class ValidationIssue:
     output_line: str # the full line from the LLM output that contained it
 
 
+class CitationError(ValueError):
+    """Raised by validate_citations when strict=True and issues are found."""
+
+    def __init__(self, issues: list[ValidationIssue]) -> None:
+        self.issues = issues
+        super().__init__(f"citation validation failed: {len(issues)} issues")
+
+
 def validate_citations(
     output: str,
     known_shas: set[str],
@@ -58,6 +66,6 @@ def validate_citations(
                     issues.append(ValidationIssue("unknown_pr", str(pr), safe_line))
 
     if strict and issues:
-        raise ValueError(f"citation validation failed: {len(issues)} issues")
+        raise CitationError(issues)
 
     return issues
