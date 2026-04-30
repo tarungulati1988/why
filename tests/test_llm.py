@@ -98,6 +98,25 @@ def test_complete_returns_content_string(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 # ---------------------------------------------------------------------------
+# Test 2b: None or empty content from Groq raises LLMError
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("empty_content", [None, ""])
+def test_groq_empty_content_raises_llm_error(
+    monkeypatch: pytest.MonkeyPatch,
+    empty_content: str | None,
+) -> None:
+    """When GroqBackend receives None or '' content, complete() must raise LLMError."""
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    mock_client = _make_mock_groq_client(content=empty_content)
+
+    with patch("why.llm.groq_sdk.Groq", return_value=mock_client):
+        llm = LLMClient()
+        with pytest.raises(LLMError, match="model returned no text content"):
+            llm.complete("sys", [Message("user", "hi")])
+
+
+# ---------------------------------------------------------------------------
 # Test 3: missing GROQ_API_KEY raises LLMMissingKeyError at construction
 # ---------------------------------------------------------------------------
 
@@ -361,3 +380,151 @@ def test_non_retryable_llm_error_propagates_without_retry(
     assert "API error 400" in str(exc_info.value)
     assert call_count["n"] == 1
     mock_sleep.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Test 15: openai-compatible provider constructs an OpenAICompatibleBackend
+# ---------------------------------------------------------------------------
+
+def test_provider_openai_compatible_constructs_with_base_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LLMClient with openai-compatible provider must build an OpenAICompatibleBackend."""
+    from unittest.mock import patch as _patch
+
+    from why._backends.openai_compatible import OpenAICompatibleBackend
+
+    monkeypatch.setenv("WHY_LLM_PROVIDER", "openai-compatible")
+    monkeypatch.setenv("WHY_LLM_BASE_URL", "http://localhost:11434/v1")
+
+    with _patch("openai.OpenAI"):
+        client = LLMClient()
+
+    assert isinstance(client._backend, OpenAICompatibleBackend)
+
+
+# ---------------------------------------------------------------------------
+# Test 16: openai-compatible without WHY_LLM_BASE_URL raises LLMMissingKeyError
+# ---------------------------------------------------------------------------
+
+def test_provider_openai_compatible_missing_base_url_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LLMClient() with openai-compatible but no WHY_LLM_BASE_URL must raise LLMMissingKeyError."""
+    monkeypatch.setenv("WHY_LLM_PROVIDER", "openai-compatible")
+    monkeypatch.delenv("WHY_LLM_BASE_URL", raising=False)
+
+    with pytest.raises(LLMMissingKeyError, match="WHY_LLM_BASE_URL"):
+        LLMClient()
+
+
+# ---------------------------------------------------------------------------
+# Test 17: openai-compatible with no WHY_LLM_API_KEY defaults to "not-needed"
+# ---------------------------------------------------------------------------
+
+def test_provider_openai_compatible_default_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When WHY_LLM_API_KEY is absent, api_key='not-needed' is passed to openai.OpenAI."""
+    from unittest.mock import patch as _patch
+
+    monkeypatch.setenv("WHY_LLM_PROVIDER", "openai-compatible")
+    monkeypatch.setenv("WHY_LLM_BASE_URL", "http://localhost:11434/v1")
+    monkeypatch.delenv("WHY_LLM_API_KEY", raising=False)
+
+    with _patch("openai.OpenAI") as mock_openai_cls:
+        LLMClient()
+
+    _, kwargs = mock_openai_cls.call_args
+    assert kwargs.get("api_key") == "not-needed"
+
+
+# ---------------------------------------------------------------------------
+# Test 18: openai-compatible uses WHY_LLM_API_KEY when set
+# ---------------------------------------------------------------------------
+
+def test_provider_openai_compatible_custom_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When WHY_LLM_API_KEY=sk-test-123, that exact value is passed to openai.OpenAI."""
+    from unittest.mock import patch as _patch
+
+    monkeypatch.setenv("WHY_LLM_PROVIDER", "openai-compatible")
+    monkeypatch.setenv("WHY_LLM_BASE_URL", "http://localhost:11434/v1")
+    monkeypatch.setenv("WHY_LLM_API_KEY", "sk-test-123")
+
+    with _patch("openai.OpenAI") as mock_openai_cls:
+        LLMClient()
+
+    _, kwargs = mock_openai_cls.call_args
+    assert kwargs.get("api_key") == "sk-test-123"
+
+
+# ---------------------------------------------------------------------------
+# Test 19: constructor provider= param overrides WHY_LLM_PROVIDER env var
+# ---------------------------------------------------------------------------
+
+def test_provider_openai_compatible_constructor_param_overrides_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """provider='openai-compatible' kwarg must win over WHY_LLM_PROVIDER=groq env var."""
+    from unittest.mock import patch as _patch
+
+    from why._backends.openai_compatible import OpenAICompatibleBackend
+
+    monkeypatch.setenv("WHY_LLM_PROVIDER", "groq")  # env says groq ...
+    monkeypatch.setenv("WHY_LLM_BASE_URL", "http://localhost:11434/v1")
+    monkeypatch.delenv("WHY_LLM_API_KEY", raising=False)
+
+    with _patch("openai.OpenAI"):
+        # ... but constructor kwarg says openai-compatible → must win
+        client = LLMClient(provider="openai-compatible")
+
+    assert isinstance(client._backend, OpenAICompatibleBackend)
+
+
+# ---------------------------------------------------------------------------
+# Test 20: non-local base_url without API key emits a warning
+# ---------------------------------------------------------------------------
+
+def test_non_local_base_url_without_api_key_warns(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """LLMClient should warn when WHY_LLM_BASE_URL is non-local and WHY_LLM_API_KEY is absent."""
+    from unittest.mock import patch as _patch
+
+    monkeypatch.setenv("WHY_LLM_PROVIDER", "openai-compatible")
+    monkeypatch.setenv("WHY_LLM_BASE_URL", "https://remote.example.com/v1")
+    monkeypatch.delenv("WHY_LLM_API_KEY", raising=False)
+
+    with _patch("openai.OpenAI"), caplog.at_level(logging.WARNING, logger="why.llm"):
+        LLMClient()
+
+    assert any(
+        "non-local host" in record.message and "WHY_LLM_API_KEY" in record.message
+        for record in caplog.records
+    ), "Expected a warning about non-local host without credentials"
+
+
+# ---------------------------------------------------------------------------
+# Test 21: local base_url without API key does NOT warn
+# ---------------------------------------------------------------------------
+
+def test_local_base_url_without_api_key_does_not_warn(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """LLMClient must NOT warn when WHY_LLM_BASE_URL is localhost, even without API key."""
+    from unittest.mock import patch as _patch
+
+    monkeypatch.setenv("WHY_LLM_PROVIDER", "openai-compatible")
+    monkeypatch.setenv("WHY_LLM_BASE_URL", "http://localhost:11434/v1")
+    monkeypatch.delenv("WHY_LLM_API_KEY", raising=False)
+
+    with _patch("openai.OpenAI"), caplog.at_level(logging.WARNING, logger="why.llm"):
+        LLMClient()
+
+    assert not any(
+        "non-local host" in record.message for record in caplog.records
+    ), "Unexpected warning logged for a localhost base_url"

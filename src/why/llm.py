@@ -15,15 +15,20 @@ from typing import Any, Literal
 import groq as groq_sdk  # KEEP — tests patch why.llm.groq_sdk.Groq
 
 from why._backends.base import Backend, ChatResult
+from why._errors import (
+    _RETRYABLE_STATUS,
+    LLMError,
+    LLMMissingKeyError,
+    LLMRateLimitError,
+    LLMServerError,
+    LLMTimeoutError,
+)
 
 logger = logging.getLogger("why.llm")
 
 # ---------------------------------------------------------------------------
 # Retry constants
 # ---------------------------------------------------------------------------
-
-# HTTP status codes that warrant a retry (server-side transient errors).
-_RETRYABLE_STATUS = frozenset({429, 500, 503})
 
 # Maximum number of retry attempts after the initial attempt.
 _MAX_RETRIES = 3
@@ -36,6 +41,15 @@ _BASE_DELAY = 1.0
 # Public types
 # ---------------------------------------------------------------------------
 
+# Re-export so `from why.llm import LLMError` etc. continue to work.
+__all__ = [
+    "LLMError",
+    "LLMMissingKeyError",
+    "LLMRateLimitError",
+    "LLMServerError",
+    "LLMTimeoutError",
+]
+
 
 @dataclass
 class Message:
@@ -47,26 +61,6 @@ class Message:
     def __post_init__(self) -> None:
         if self.role not in ("user", "assistant"):
             raise ValueError(f"Message.role must be 'user' or 'assistant', got {self.role!r}")
-
-
-class LLMError(Exception):
-    """Base exception for all LLM client errors."""
-
-
-class LLMMissingKeyError(LLMError):
-    """Required API key environment variable is absent at construction time."""
-
-
-class LLMRateLimitError(LLMError):
-    """Rate limit retries exhausted (HTTP 429)."""
-
-
-class LLMServerError(LLMError):
-    """Server error retries exhausted (HTTP 500/503)."""
-
-
-class LLMTimeoutError(LLMError):
-    """Timeout retries exhausted."""
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +87,7 @@ class GroqBackend:
             raise LLMError(f"API error {e.status_code}") from e
 
         content = r.choices[0].message.content
-        if content is None:
+        if not content:
             raise LLMError("model returned no text content")
         u = r.usage
         return ChatResult(
@@ -116,6 +110,14 @@ class LLMClient:
       1. ``provider`` constructor argument
       2. ``WHY_LLM_PROVIDER`` environment variable
       3. Default: ``"groq"``
+
+    Supported providers:
+
+    - ``"groq"`` — Groq cloud API. Requires ``GROQ_API_KEY``.
+    - ``"openai-compatible"`` — Any OpenAI-compatible server (Ollama, llama.cpp,
+      LM Studio, vLLM, TGI, …). Requires ``WHY_LLM_BASE_URL`` (e.g.
+      ``http://localhost:11434/v1``). ``WHY_LLM_API_KEY`` is optional; defaults
+      to ``"not-needed"`` for servers that do not require authentication.
     """
 
     def __init__(
@@ -135,10 +137,32 @@ class LLMClient:
             if not api_key:
                 raise LLMMissingKeyError("GROQ_API_KEY not set")
             self._backend: Backend = GroqBackend(api_key)
+        elif resolved_provider == "openai-compatible":
+            base_url = os.getenv("WHY_LLM_BASE_URL")
+            if not base_url:
+                raise LLMMissingKeyError("WHY_LLM_BASE_URL not set")
+            api_key = os.getenv("WHY_LLM_API_KEY") or "not-needed"
+            # Warn when sending to a non-local host without an explicit API key,
+            # since prompt data will be transmitted without credentials.
+            _local_prefixes = ("http://localhost", "http://127.", "http://[::1]")
+            if not os.getenv("WHY_LLM_API_KEY") and not base_url.startswith(_local_prefixes):
+                logger.warning(
+                    "WHY_LLM_BASE_URL points to a non-local host (%s) but WHY_LLM_API_KEY is "
+                    "not set; prompt data will be sent without credentials.",
+                    base_url,
+                )
+            # Lazy import — keeps `openai` an importable-but-not-imported dependency
+            # for users who only use Groq.
+            from why._backends.openai_compatible import OpenAICompatibleBackend
+            self._backend = OpenAICompatibleBackend(base_url=base_url, api_key=api_key)
         elif resolved_provider == "anthropic":
             raise NotImplementedError("anthropic backend not yet implemented")
         elif resolved_provider == "openai":
-            raise NotImplementedError("openai backend not yet implemented")
+            raise NotImplementedError(
+                "Direct OpenAI API support is not yet implemented. "
+                "For OpenAI-compatible local servers (Ollama, llama.cpp, LM Studio, vLLM, TGI), "
+                "use provider='openai-compatible' and set WHY_LLM_BASE_URL."
+            )
         else:
             raise LLMError(f"unknown provider: {resolved_provider!r}")
 

@@ -1,12 +1,21 @@
 {
-  "branch": "sleipnir/issue-92-backend-protocol",
+  "branch": "sleipnir/issue-93-openai-compatible",
   "base_ref": "origin/main",
-  "base_sha": "ddec3f76ab58a258828610924dace4bab0f37964",
-  "merge_base": "ddec3f76ab58a258828610924dace4bab0f37964",
-  "dirty_files": [".python-version", "docs/sleipnir/design-issue-92-backend-protocol.md"],
-  "included_files": ["docs/sleipnir/design-issue-92-backend-protocol.md"],
+  "base_sha": "951427b",
+  "merge_base": "951427b",
+  "dirty_files": [".python-version"],
+  "included_files": [
+    "docs/sleipnir/design-issue-93-openai-compatible.md",
+    "src/why/_backends/openai_compatible.py",
+    "src/why/_backends/__init__.py",
+    "src/why/llm.py",
+    "tests/test_openai_compatible_backend.py",
+    "tests/test_llm.py",
+    "pyproject.toml",
+    "uv.lock"
+  ],
   "excluded_files": [".python-version"],
-  "issue": 92,
-  "design_doc": "docs/sleipnir/design-issue-92-backend-protocol.md",
-  "phase": "execution"
+  "issue": 93,
+  "design_doc": "docs/sleipnir/design-issue-93-openai-compatible.md",
+  "phase": "review"
 }
