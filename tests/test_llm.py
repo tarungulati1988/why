@@ -528,3 +528,323 @@ def test_local_base_url_without_api_key_does_not_warn(
     assert not any(
         "non-local host" in record.message for record in caplog.records
     ), "Unexpected warning logged for a localhost base_url"
+
+
+# ---------------------------------------------------------------------------
+# Test 22: OpenAICompatibleBackend passes num_ctx in extra_body when set
+# ---------------------------------------------------------------------------
+
+def test_openai_compatible_backend_passes_num_ctx_in_extra_body() -> None:
+    """When num_ctx is set, chat() must pass extra_body={"options": {"num_ctx": N}}."""
+    from unittest.mock import patch as _patch
+
+    from why._backends.openai_compatible import OpenAICompatibleBackend
+
+    with _patch("openai.OpenAI") as mock_openai_cls:
+        mock_response = MagicMock()
+        mock_response.choices[0].message.content = "ok"
+        mock_response.usage.prompt_tokens = 5
+        mock_response.usage.completion_tokens = 3
+        mock_response.usage.total_tokens = 8
+
+        mock_create = MagicMock(return_value=mock_response)
+        mock_openai_cls.return_value.chat.completions.create = mock_create
+
+        backend = OpenAICompatibleBackend(
+            base_url="http://localhost:11434/v1",
+            api_key="not-needed",
+            num_ctx=8192,
+        )
+        backend.chat("llama3", [{"role": "user", "content": "hi"}])
+
+    _, kwargs = mock_create.call_args
+    assert kwargs.get("extra_body") == {"options": {"num_ctx": 8192}}
+
+
+# ---------------------------------------------------------------------------
+# Test 23: OpenAICompatibleBackend omits extra_body when num_ctx=None
+# ---------------------------------------------------------------------------
+
+def test_openai_compatible_backend_omits_extra_body_when_num_ctx_none() -> None:
+    """When num_ctx=None, chat() must NOT include extra_body in the call kwargs."""
+    from unittest.mock import patch as _patch
+
+    from why._backends.openai_compatible import OpenAICompatibleBackend
+
+    with _patch("openai.OpenAI") as mock_openai_cls:
+        mock_response = MagicMock()
+        mock_response.choices[0].message.content = "ok"
+        mock_response.usage.prompt_tokens = 5
+        mock_response.usage.completion_tokens = 3
+        mock_response.usage.total_tokens = 8
+
+        mock_create = MagicMock(return_value=mock_response)
+        mock_openai_cls.return_value.chat.completions.create = mock_create
+
+        backend = OpenAICompatibleBackend(
+            base_url="http://localhost:11434/v1",
+            api_key="not-needed",
+            num_ctx=None,
+        )
+        backend.chat("llama3", [{"role": "user", "content": "hi"}])
+
+    _, kwargs = mock_create.call_args
+    assert "extra_body" not in kwargs
+
+
+# ---------------------------------------------------------------------------
+# Test 24: OpenAICompatibleBackend default num_ctx is None (no extra_body)
+# ---------------------------------------------------------------------------
+
+def test_openai_compatible_backend_default_num_ctx_is_none() -> None:
+    """When num_ctx is not passed, chat() must NOT include extra_body in the call kwargs."""
+    from unittest.mock import patch as _patch
+
+    from why._backends.openai_compatible import OpenAICompatibleBackend
+
+    with _patch("openai.OpenAI") as mock_openai_cls:
+        mock_response = MagicMock()
+        mock_response.choices[0].message.content = "ok"
+        mock_response.usage.prompt_tokens = 5
+        mock_response.usage.completion_tokens = 3
+        mock_response.usage.total_tokens = 8
+
+        mock_create = MagicMock(return_value=mock_response)
+        mock_openai_cls.return_value.chat.completions.create = mock_create
+
+        backend = OpenAICompatibleBackend(
+            base_url="http://localhost:11434/v1",
+            api_key="not-needed",
+        )
+        backend.chat("llama3", [{"role": "user", "content": "hi"}])
+
+    _, kwargs = mock_create.call_args
+    assert "extra_body" not in kwargs
+
+
+# ---------------------------------------------------------------------------
+# Helpers for num_ctx / auto-couple tests
+# ---------------------------------------------------------------------------
+
+def _make_openai_compatible_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Set the minimal env vars needed for openai-compatible provider."""
+    monkeypatch.setenv("WHY_LLM_PROVIDER", "openai-compatible")
+    monkeypatch.setenv("WHY_LLM_BASE_URL", "http://localhost:11434/v1")
+    monkeypatch.delenv("WHY_LLM_API_KEY", raising=False)
+
+
+# ---------------------------------------------------------------------------
+# Test 25: WHY_LLM_NUM_CTX explicit positive value is passed to backend
+# ---------------------------------------------------------------------------
+
+def test_num_ctx_explicit_positive_passed_to_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When WHY_LLM_NUM_CTX=8192, backend must be constructed with num_ctx=8192."""
+    _make_openai_compatible_env(monkeypatch)
+    monkeypatch.setenv("WHY_LLM_NUM_CTX", "8192")
+
+    with patch("why._backends.openai_compatible.OpenAICompatibleBackend") as mock_backend_cls, \
+         patch("openai.OpenAI"):
+        mock_backend_cls.return_value = MagicMock()
+        LLMClient()
+
+    _, kwargs = mock_backend_cls.call_args
+    assert kwargs.get("num_ctx") == 8192
+
+
+# ---------------------------------------------------------------------------
+# Test 26: WHY_LLM_NUM_CTX=0 raises LLMError
+# ---------------------------------------------------------------------------
+
+def test_num_ctx_zero_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """WHY_LLM_NUM_CTX=0 must raise LLMError with appropriate message."""
+    _make_openai_compatible_env(monkeypatch)
+    monkeypatch.setenv("WHY_LLM_NUM_CTX", "0")
+
+    with pytest.raises(LLMError, match="WHY_LLM_NUM_CTX must be a positive integer"):
+        LLMClient()
+
+
+# ---------------------------------------------------------------------------
+# Test 27: WHY_LLM_NUM_CTX=-5 raises LLMError
+# ---------------------------------------------------------------------------
+
+def test_num_ctx_negative_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """WHY_LLM_NUM_CTX=-5 must raise LLMError with appropriate message."""
+    _make_openai_compatible_env(monkeypatch)
+    monkeypatch.setenv("WHY_LLM_NUM_CTX", "-5")
+
+    with pytest.raises(LLMError, match="WHY_LLM_NUM_CTX must be a positive integer"):
+        LLMClient()
+
+
+# ---------------------------------------------------------------------------
+# Test 28: WHY_LLM_NUM_CTX=abc raises LLMError
+# ---------------------------------------------------------------------------
+
+def test_num_ctx_non_integer_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """WHY_LLM_NUM_CTX=abc must raise LLMError with appropriate message."""
+    _make_openai_compatible_env(monkeypatch)
+    monkeypatch.setenv("WHY_LLM_NUM_CTX", "abc")
+
+    with pytest.raises(LLMError, match="WHY_LLM_NUM_CTX must be a positive integer"):
+        LLMClient()
+
+
+# ---------------------------------------------------------------------------
+# Test 29: WHY_LLM_NUM_CTX="" treated as unset, auto-couples to default 4096
+# ---------------------------------------------------------------------------
+
+def test_num_ctx_empty_string_treated_as_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    """WHY_LLM_NUM_CTX='' is treated as unset; backend gets num_ctx=4096."""
+    _make_openai_compatible_env(monkeypatch)
+    monkeypatch.setenv("WHY_LLM_NUM_CTX", "")
+    monkeypatch.delenv("WHY_LLM_MAX_CTX", raising=False)
+
+    with patch("why._backends.openai_compatible.OpenAICompatibleBackend") as mock_backend_cls, \
+         patch("openai.OpenAI"):
+        mock_backend_cls.return_value = MagicMock()
+        LLMClient()
+
+    _, kwargs = mock_backend_cls.call_args
+    assert kwargs.get("num_ctx") == 4096
+
+
+# ---------------------------------------------------------------------------
+# Test 30: WHY_LLM_NUM_CTX unset, auto-couples to openai-compatible default 4096
+# ---------------------------------------------------------------------------
+
+def test_num_ctx_unset_auto_couples_to_max_ctx_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When NUM_CTX and MAX_CTX are unset with openai-compatible, backend gets num_ctx=4096."""
+    _make_openai_compatible_env(monkeypatch)
+    monkeypatch.delenv("WHY_LLM_NUM_CTX", raising=False)
+    monkeypatch.delenv("WHY_LLM_MAX_CTX", raising=False)
+
+    with patch("why._backends.openai_compatible.OpenAICompatibleBackend") as mock_backend_cls, \
+         patch("openai.OpenAI"):
+        mock_backend_cls.return_value = MagicMock()
+        LLMClient()
+
+    _, kwargs = mock_backend_cls.call_args
+    assert kwargs.get("num_ctx") == 4096
+
+
+# ---------------------------------------------------------------------------
+# Test 31: WHY_LLM_NUM_CTX unset, WHY_LLM_MAX_CTX=2048 → backend gets num_ctx=2048
+# ---------------------------------------------------------------------------
+
+def test_num_ctx_unset_auto_couples_to_explicit_max_ctx(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When WHY_LLM_NUM_CTX is unset but WHY_LLM_MAX_CTX=2048, backend gets num_ctx=2048."""
+    _make_openai_compatible_env(monkeypatch)
+    monkeypatch.delenv("WHY_LLM_NUM_CTX", raising=False)
+    monkeypatch.setenv("WHY_LLM_MAX_CTX", "2048")
+
+    with patch("why._backends.openai_compatible.OpenAICompatibleBackend") as mock_backend_cls, \
+         patch("openai.OpenAI"):
+        mock_backend_cls.return_value = MagicMock()
+        LLMClient()
+
+    _, kwargs = mock_backend_cls.call_args
+    assert kwargs.get("num_ctx") == 2048
+
+
+# ---------------------------------------------------------------------------
+# Test 32: WHY_LLM_NUM_CTX unset, WHY_LLM_MAX_CTX=0 → backend gets num_ctx=None
+# ---------------------------------------------------------------------------
+
+def test_num_ctx_unset_max_ctx_zero_disables(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When WHY_LLM_NUM_CTX is unset and WHY_LLM_MAX_CTX=0, backend gets num_ctx=None."""
+    _make_openai_compatible_env(monkeypatch)
+    monkeypatch.delenv("WHY_LLM_NUM_CTX", raising=False)
+    monkeypatch.setenv("WHY_LLM_MAX_CTX", "0")
+
+    with patch("why._backends.openai_compatible.OpenAICompatibleBackend") as mock_backend_cls, \
+         patch("openai.OpenAI"):
+        mock_backend_cls.return_value = MagicMock()
+        LLMClient()
+
+    _, kwargs = mock_backend_cls.call_args
+    assert kwargs.get("num_ctx") is None
+
+
+# ---------------------------------------------------------------------------
+# Test 33: WHY_LLM_NUM_CTX=16384 overrides WHY_LLM_MAX_CTX=4096
+# ---------------------------------------------------------------------------
+
+def test_num_ctx_explicit_overrides_max_ctx_couple(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When WHY_LLM_NUM_CTX=16384 is set, it wins over WHY_LLM_MAX_CTX=4096."""
+    _make_openai_compatible_env(monkeypatch)
+    monkeypatch.setenv("WHY_LLM_NUM_CTX", "16384")
+    monkeypatch.setenv("WHY_LLM_MAX_CTX", "4096")
+
+    with patch("why._backends.openai_compatible.OpenAICompatibleBackend") as mock_backend_cls, \
+         patch("openai.OpenAI"):
+        mock_backend_cls.return_value = MagicMock()
+        LLMClient()
+
+    _, kwargs = mock_backend_cls.call_args
+    assert kwargs.get("num_ctx") == 16384
+
+
+# ---------------------------------------------------------------------------
+# Test 34: groq provider silently ignores WHY_LLM_NUM_CTX
+# ---------------------------------------------------------------------------
+
+def test_num_ctx_groq_provider_no_effect(monkeypatch: pytest.MonkeyPatch) -> None:
+    """WHY_LLM_NUM_CTX is silently ignored on groq; no error, GroqBackend is constructed."""
+    monkeypatch.setenv("WHY_LLM_PROVIDER", "groq")
+    monkeypatch.setenv("GROQ_API_KEY", "k")
+    monkeypatch.setenv("WHY_LLM_NUM_CTX", "8192")
+
+    with patch("why.llm.groq_sdk.Groq") as mock_groq:
+        mock_groq.return_value = MagicMock()
+        client = LLMClient()
+
+    assert client.provider == "groq"
+    mock_groq.assert_called_once_with(api_key="k")
+    from why.llm import GroqBackend
+    assert isinstance(client._backend, GroqBackend)
+    assert not hasattr(client._backend, "_num_ctx")
+
+
+# ---------------------------------------------------------------------------
+# Test 35: num_ctx DEBUG log emitted when num_ctx is set
+# ---------------------------------------------------------------------------
+
+def test_openai_compatible_backend_logs_num_ctx_debug(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """When num_ctx is set, chat() must emit a DEBUG log line 'num_ctx=N (Ollama)'."""
+    import logging as _logging
+    from unittest.mock import patch as _patch
+
+    from why._backends.openai_compatible import OpenAICompatibleBackend
+
+    with _patch("openai.OpenAI") as mock_openai_cls:
+        mock_response = MagicMock()
+        mock_response.choices[0].message.content = "ok"
+        mock_response.usage.prompt_tokens = 1
+        mock_response.usage.completion_tokens = 1
+        mock_response.usage.total_tokens = 2
+        mock_openai_cls.return_value.chat.completions.create.return_value = mock_response
+
+        backend = OpenAICompatibleBackend(
+            base_url="http://localhost:11434/v1",
+            api_key="not-needed",
+            num_ctx=4096,
+        )
+        with caplog.at_level(_logging.DEBUG, logger="why.llm"):
+            backend.chat("llama3", [{"role": "user", "content": "hi"}])
+
+    assert any("num_ctx=4096 (Ollama)" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Test 36: invalid WHY_LLM_NUM_CTX echoes the bad value in the error message
+# ---------------------------------------------------------------------------
+
+def test_num_ctx_invalid_error_echoes_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The LLMError must include the bad value the user provided."""
+    _make_openai_compatible_env(monkeypatch)
+    monkeypatch.setenv("WHY_LLM_NUM_CTX", "8k")
+    with pytest.raises(LLMError, match="got '8k'"):
+        LLMClient()
