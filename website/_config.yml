@@ -1,0 +1,35 @@
+title: why
+description: git blame tells you who. why tells you why.
+url: https://www.why.ai
+baseurl: ""
+
+remote_theme: just-the-docs/just-the-docs
+
+# Search
+search_enabled: true
+search:
+  heading_level: 3
+  previews: 3
+  preview_words_before: 5
+  preview_words_after: 10
+
+# Site nav
+heading_anchors: true
+permalink: pretty
+
+# Footer
+footer_content: 'Source on <a href="https://github.com/tarungulati1988/why">GitHub</a>. MIT licensed.'
+
+# Aux links shown in top right
+aux_links:
+  "GitHub":
+    - "https://github.com/tarungulati1988/why"
+
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - vendor/
+
+plugins:
+  - jekyll-remote-theme
+  - jekyll-seo-tag

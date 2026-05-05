@@ -1,7 +1,31 @@
-"""LLM client abstraction for why.
+"""LLM client abstraction — provider routing, retry logic, and token budgeting.
 
-Supports Groq as the default backend with hand-rolled retry logic.
-Provider is resolved via: constructor param → WHY_LLM_PROVIDER env var → "groq".
+Stage: llm — called from synthesize_why to issue the synthesis (and optional
+       grounding) completion requests.
+
+Inputs:
+    model    — model name string forwarded verbatim to the backend.
+    provider — optional override; otherwise read from WHY_LLM_PROVIDER env var
+               (default "groq").
+    messages — list[Message] built by prompts.py.
+    system   — system prompt string from prompts.build_system_prompt().
+
+Outputs:
+    str — LLM response content; guaranteed non-empty (raises LLMError otherwise).
+
+Invariants:
+    - API keys and base URLs are validated at construction time (LLMMissingKeyError
+      is raised immediately rather than at call time).
+    - complete() retries up to _MAX_RETRIES times on rate-limit, server error, or
+      timeout with exponential back-off (1s → 2s → 4s). Non-retryable errors
+      (4xx except 429) propagate immediately.
+    - WHY_LLM_MAX_CTX controls the context-window hint for openai-compatible
+      providers; 0 disables it; negative/non-integer values are ignored with a warning.
+
+Notes:
+    GroqBackend is defined inline here to avoid a separate module for a single
+    concrete class. openai_compatible is lazy-imported to keep `openai` out of
+    the import graph for users who only use Groq.
 """
 
 from __future__ import annotations

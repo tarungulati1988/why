@@ -1,4 +1,24 @@
-"""SHA-keyed local cache for GitHub PR metadata."""
+"""SHA-keyed local cache for GitHub PR metadata.
+
+Stage: sidecar — consulted and updated inside synthesize_why before each GitHub API call.
+
+Inputs:
+    repo_slug — "owner__repo" string derived from the remote URL (double-underscore,
+                path-safe for filenames), passed to PRCache.__init__.
+    sha       — full commit SHA used as the cache key.
+
+Outputs:
+    list[PRMetadata] — cached PR records returned to synthesize_why; avoids a GitHub
+                       API round-trip for commits already seen within the TTL window.
+
+Invariants:
+    - Cache entries expire after 30 days (TTL enforced on read, not on write).
+    - Writes are atomic: JSON is written to a temp file then renamed into place.
+    - Corrupt or missing cache files are silently treated as a cache miss.
+
+Notes:
+    Cache lives at XDG_CACHE_HOME/why/<repo_slug>.json (defaults to ~/.cache/why/).
+"""
 
 from __future__ import annotations
 

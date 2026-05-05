@@ -1,0 +1,8 @@
+source "https://rubygems.org"
+
+gem "jekyll", "~> 4.3"
+gem "just-the-docs"
+gem "jekyll-remote-theme"
+gem "jekyll-seo-tag"
+
+# GH Pages on GitHub Actions doesn't need github-pages gem since we build with vanilla Jekyll.

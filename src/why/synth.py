@@ -1,4 +1,37 @@
-"""Synthesis pipeline orchestration for the why CLI."""
+"""Synthesis pipeline orchestration — wires all stages into a single call.
+
+Stage: synth — the central coordinator; called from cli.main() with a resolved
+       Target and initialized LLMClient.
+
+Inputs:
+    target     — resolved Target (file + optional line/symbol).
+    repo       — repository root Path.
+    llm        — initialized LLMClient (provider, model already resolved).
+    gh         — optional GitHubClient for PR metadata fetching.
+    pr_cache   — optional PRCache; consulted before each GitHub API call.
+    strict     — when True, CitationError is raised on hallucinated SHAs/PRs.
+    two_pass   — when True, a second LLM call appends a Grounding Check section.
+    brief      — when True, prompts the LLM for a 3-sentence summary.
+    deep       — when True, all commits are sent instead of the scored subset.
+    max_commits — optional hard cap on commits sent to the LLM.
+
+Outputs:
+    str — final Markdown narrative with an appended ## 📊 Timeline section,
+          validated and repaired by timeline.validate_and_repair_timeline().
+
+Invariants:
+    - Line range is resolved once at the top of synthesize_why to avoid
+      duplicate tree-sitter parses across _resolve_line_range and _extract_current_code.
+    - Diffs are fetched after scoring so only key commits incur git subprocesses.
+    - GitError on individual diff fetches is swallowed (logged as warning) so
+      a single bad commit doesn't abort the whole pipeline.
+    - Context auto-shrink (_shrink_for_budget) is applied before prompt building
+      when WHY_LLM_MAX_CTX is set (auto-enabled for openai-compatible provider).
+
+Notes:
+    _get_repo_url and _estimate_prompt_cost are module-level helpers but are
+    not part of the public API of this module.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,31 @@
-"""Utilities for retrieving a commit's diff from a git repository."""
+"""Per-commit diff retrieval, optionally scoped to a line range.
+
+Stage: diff — called from synthesize_why for each key commit after scoring.
+
+Inputs:
+    sha        — commit SHA to inspect.
+    file       — path to the file whose diff is wanted.
+    line_range — optional (start, end) 1-based inclusive tuple; when set,
+                 git log -L is used instead of git show for semantic tracking.
+    repo       — repository root used as cwd for git subprocesses.
+
+Outputs:
+    str — unified diff text, truncated to max_chars (default 2000) with a
+          "[truncated]" sentinel appended when clipped.
+
+Invariants:
+    For root commits (no parent for sha^!), git log -L fails with the base
+    GitError; the code falls back to a whole-file diff via git show. Only
+    the exact base GitError triggers this fallback — GitTimeoutError and
+    GitNotFoundError are subclasses and propagate to the caller unchanged.
+    Truncation via max_chars is always applied; callers cannot receive a diff
+    larger than that value.
+
+Notes:
+    git log -L fails on root commits (no parent for sha^!); the error is caught
+    and the code falls back to a whole-file diff via git show. Only the base
+    GitError triggers the fallback — GitTimeoutError and GitNotFoundError propagate.
+"""
 
 from __future__ import annotations
 

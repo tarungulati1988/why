@@ -1,9 +1,22 @@
-"""Citation validator for synthesize_why output.
+"""Citation validator — post-processing pass to detect LLM hallucinated references.
 
-Post-processing pass that checks every SHA and PR number mentioned in the LLM
-output against the set of known SHAs and PRs derived from the input context.
-Any reference that cannot be traced back to the input is flagged as a potential
-hallucination.
+Stage: post-LLM — runs in synthesize_why immediately after llm.complete() returns.
+
+Inputs:
+    output     — raw LLM response text to scan.
+    known_shas — set of full commit SHAs that were included in the prompt context.
+    known_prs  — set of PR numbers (int) that were included in the prompt context.
+
+Outputs:
+    list[ValidationIssue] — each issue names a SHA or PR reference in the output
+                            that cannot be traced to the input context.
+
+Invariants:
+    - SHA matching is bidirectional prefix: a 7-char short ref matches a 40-char stored
+      SHA and vice versa, so callers can pass either form in known_shas.
+    - Validation is skipped for the relevant type when the corresponding known set is
+      empty, preventing every hex token / #NNN in the output from being a false positive.
+    - strict=True raises CitationError on the first batch of issues found.
 """
 
 from __future__ import annotations

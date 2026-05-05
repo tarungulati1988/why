@@ -1,56 +1,33 @@
-"""Key-commit scoring function for why.
+"""Key-commit scoring and selection for why.
 
-## Scoring model
+Stage: scoring — runs after history retrieval and before diff fetching; filters
+       the full commit list down to the most explanatory subset.
 
-The goal is to rank commits by how likely they are to *explain* why a line or
-symbol looks the way it does today.  The score is a single float; higher is
-more interesting.  It is not normalised — only the relative order matters.
+Inputs:
+    commits — list[Commit] in any order (callers need not pre-sort).
+    prs     — Mapping[sha, PRMetadata]; only SHA membership is tested (O(1)).
+    n       — target result size (default 5).
+    now     — reference date for recency scoring (default: today).
 
-### Signal design
+Outputs:
+    list[Commit] — at most n commits sorted oldest-first. Two anchors are always
+                   forced in: the oldest commit and the most-recent substantive
+                   commit (score > _SUBSTANTIVE_THRESHOLD). This may push the
+                   result above n when both anchors are distinct and n=1.
 
-Each signal answers a different question about the commit:
+Scoring model (additive float, higher = more explanatory):
+    + log(1 + additions + deletions) * 2.0   — diff size (log-scaled)
+    + log(1 + len(subject) + len(body))       — message length (log-scaled)
+    + 2.0 per keyword hit                     — refactor, fix, security, etc.
+    + 3.0 if has_pr                           — PR presence bonus
+    + max(0, 3.0 - log(1 + days_ago/30))      — recency bonus (log-decay)
+    - 5.0 if merge commit                     — merge penalty
+    - 10.0 if subject matches JUNK_PATTERNS   — housekeeping penalty
 
-  1. **Diff size** — did this commit actually change a lot of code?
-  2. **Message length** — did the author bother to explain what they did?
-  3. **Keywords** — does the message use vocabulary associated with meaningful
-     change (refactor, security, breaking, …)?
-  4. **PR presence** — was this change reviewed?  PRs carry discussion context
-     that rarely fits in a commit message.
-  5. **Recency** — recent commits are more likely to explain current behaviour;
-     old commits may describe code that has since been replaced.
-  6. **Merge penalty** — merge commits are bookkeeping, not explanations.
-  7. **Junk penalty** — housekeeping commits (typos, formatting, bumps) almost
-     never explain intent.
-
-### Why log-scaling for continuous signals
-
-Raw diff size and message length have unbounded range: a refactor might touch
-5 lines or 5 000.  Using the raw count would let a single huge diff swamp every
-other signal.  ``log(1 + x)`` compresses the range so that going from 0→10
-lines and 100→1 000 lines contribute roughly equally on the score axis, while
-still preserving the direction (more is better).  The ``+1`` keeps the domain
-non-negative: ``log(1 + 0) = 0``, so a zero-line commit contributes nothing.
-
-### Why log-decay for recency
-
-A commit from today is more relevant than one from five years ago, but the
-relevance curve is not linear — a commit from last week is only marginally
-more relevant than one from last month.  ``_RECENCY_MAX - log(1 + days/30)``
-gives a bonus that starts at ~3 (day 0), falls to ~2.1 at 30 days, ~1.4 at
-90 days, and reaches 0 at roughly 1 800 days (~5 years).  The outer
-``max(0.0, …)`` clamps to zero so ancient commits get no bonus and no penalty
-from this term.  ``days_ago`` is also clamped to 0 to prevent future-dated
-commits (clock skew, timezone artefacts) from producing a negative argument
-to ``log``.
-
-### Why additive and not multiplicative
-
-An additive model is easier to reason about and tune: each term has a clear
-unit (points), penalties subtract from the same pool as bonuses, and the
-constants table at the top of this file is the complete specification of the
-model.  A multiplicative model would amplify the effect of every term and make
-a zero in any signal collapse the whole score, which is not what we want (a
-very recent, zero-line commit should still score above zero).
+Notes:
+    Log-scaling is used for diff size and message length to prevent a single
+    massive commit from dominating all other signals. The model is additive
+    (not multiplicative) so a zero in any one term doesn't collapse the score.
 """
 
 from __future__ import annotations

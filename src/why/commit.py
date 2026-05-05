@@ -1,26 +1,31 @@
 """Commit dataclass and porcelain log parser for why.
 
-This module owns two things:
-1. ``Commit`` — an immutable, typed representation of a single git commit.
-2. ``parse_porcelain`` — converts raw ``git log`` output (using the constants
-   below) into ``list[Commit]``.
+Stage: parse — sits between git subprocess output (history.py) and every
+       downstream consumer (scoring, prompts, synth).
 
-Design note — why single-pass (option 1):
-  ``PORCELAIN_FORMAT`` and ``SHORTSTAT_FLAG`` are designed to be passed together
-  in a single ``git log`` invocation.  Because shortstat is already interleaved
-  with commit metadata in the same stdout blob, one parser can walk it in a
-  single pass — no second subprocess, no SHA-keyed merge step.
+Inputs:
+    raw git log stdout — produced by running:
+        git log --format=<PORCELAIN_FORMAT> --shortstat
 
-  The alternative (option 2) is to run two git commands:
-    - ``git log --format=PORCELAIN_FORMAT`` for metadata only
-    - ``git log --shortstat --format=%H``   for stat lines
-  … keep each parser simple and focused, then zip the two result lists by SHA.
+Outputs:
+    list[Commit] — ordered newest-first (preserving git log default order);
+                   each commit carries sha, author, date, subject, body,
+                   parents, additions, and deletions.
 
-  Concrete refactor trigger:
-    If we ever want per-file stats via ``git diff --numstat``, or stats from a
-    cached DB that doesn't call git, split metadata and stats parsing and zip
-    by SHA.  At that point the two data sources diverge and the single-pass
-    design becomes an obstacle.
+Invariants:
+    - PORCELAIN_FORMAT and SHORTSTAT_FLAG must always be passed together in a
+      single git invocation; the parser relies on their interleaved structure.
+    - Commit is a frozen dataclass — immutable after construction; stats are
+      patched via dataclasses.replace during parsing.
+    - parse_porcelain raises ValueError on structurally malformed chunks
+      (wrong NUL-field count); it does not silently skip bad data.
+
+Notes:
+    Shortstat lines for commit K arrive as a prefix in the chunk that also
+    contains commit K+1's fields. The single-pass parser peels the shortstat
+    prefix before building each commit, then back-patches the previous commit.
+    Splitting into two git commands would simplify this but require a SHA-keyed
+    merge step — defer that refactor to when per-file stats (--numstat) are needed.
 """
 
 from __future__ import annotations

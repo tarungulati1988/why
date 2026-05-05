@@ -1,8 +1,25 @@
-"""Target resolver for the why CLI.
+"""Target resolver — parses the CLI target spec into a typed, path-safe Target.
 
-A Target is the thing the user points why at: a file, optionally narrowed
-to a line number or a symbol name.  This module is a pure domain module —
-no I/O beyond resolving the path, no Click, no subprocess.
+Stage: first — called from cli.main() before any git or LLM work begins.
+
+Inputs:
+    spec  — user-supplied string in the form "<path>[:<line>]".
+    extra — optional positional symbol name from the CLI (mutually exclusive
+            with the :<line> suffix in spec).
+    repo  — repository root used to resolve relative paths (defaults to CWD).
+
+Outputs:
+    Target — frozen dataclass with an absolute file path, and optional
+             line (int) and symbol (str) fields.
+
+Invariants:
+    - Resolved path is checked against repo root via relative_to(); specs that
+      escape the repo (e.g. ../../etc/passwd) raise TargetError.
+    - The :<line> suffix and the extra symbol argument are mutually exclusive;
+      supplying both raises TargetError.
+    - Line numbers must be integers >= 1; non-integer or zero/negative values
+      raise TargetError.
+    - No I/O beyond path resolution and existence check; no Click, no subprocess.
 """
 
 from __future__ import annotations

@@ -1,4 +1,29 @@
-"""Symbol range resolver using tree-sitter AST parsing."""
+"""Symbol range resolver using tree-sitter AST parsing.
+
+Stage: symbols — called from synth._resolve_line_range() when target.symbol is set.
+
+Inputs:
+    file   — path to the source file to parse (.py or .go supported).
+    symbol — name of the function, class, or method to locate.
+
+Outputs:
+    tuple[int, int] — 1-based (line_start, line_end) range of the symbol's
+                      definition node, used to scope history and diff retrieval.
+
+Invariants:
+    - Parser and Query objects are constructed once at module load and reused;
+      tree-sitter parsing is stateless so this is safe.
+    - SymbolNotFoundError is raised for unsupported file extensions or when
+      the symbol name is not present in the AST.
+    - When a symbol matches multiple definitions (e.g. overloaded names), the
+      first match is returned and a warning is logged.
+
+Notes:
+    Supports tree-sitter 0.25+ QueryCursor API and the older query.matches()
+    API; the correct one is selected at import time via a try/except.
+    Go interface stubs (method_spec) are intentionally excluded — only concrete
+    function_declaration and method_declaration nodes are matched.
+"""
 
 from __future__ import annotations
 

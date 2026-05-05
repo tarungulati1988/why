@@ -1,4 +1,13 @@
-"""Backend abstraction for LLMClient. Internal — not part of the public API."""
+"""Backend Protocol and ChatResult dataclass — shared contract for all LLM adapters.
+
+Invariants:
+    - Every backend must implement chat(model, payload, **extra) -> ChatResult.
+    - Retryable failures MUST be raised as LLMRateLimitError, LLMServerError, or
+      LLMTimeoutError so LLMClient.complete() can apply back-off correctly.
+    - Plain LLMError is treated as non-retryable and propagates immediately.
+    - The **extra kwargs slot is reserved for provider-specific options (e.g.
+      Ollama's num_ctx); backends that don't recognise a kwarg should ignore it.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
