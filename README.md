@@ -2,6 +2,8 @@
 
 > git blame tells you who. `why` tells you why.
 
+> **Docs:** Manual at https://www.why.ai (WIP). Architecture map: [`docs/architecture.md`](docs/architecture.md). Working with AI agents in this repo? See [`AGENTS.md`](AGENTS.md).
+
 **Status:** Active development — release pipeline configured; first publish triggered on tag `v0.0.1`.
 
 `why` is a CLI that explains why code is the way it is by mining git history and PR metadata, then synthesizing it with an LLM.
@@ -71,9 +73,9 @@ That's it — `WHY_LLM_MAX_CTX` defaults to `4096` for `openai-compatible`, and 
 
 | Model         | Params | Download | Fits 8GB RAM | Notes                                  |
 |---------------|--------|----------|--------------|----------------------------------------|
-| `qwen2.5:3b`  | 3.1B   | ~1.9 GB  | ✅           | Strongest instruction-following at 3B. |
-| `phi3:mini`   | 3.8B   | ~2.3 GB  | ✅           | Good structured-output behavior.       |
-| `llama3.2:3b` | 3.2B   | ~2.0 GB  | ✅           | Solid generalist.                      |
+| `qwen2.5:3b`  | 3.1B   | ~1.9 GB  | yes          | Strongest instruction-following at 3B. |
+| `phi3:mini`   | 3.8B   | ~2.3 GB  | yes          | Good structured-output behavior.       |
+| `llama3.2:3b` | 3.2B   | ~2.0 GB  | yes          | Solid generalist.                      |
 | `qwen2.5:7b`  | 7.6B   | ~4.7 GB  | tight        | Better quality if you have headroom.   |
 
 ### Environment variables
@@ -232,6 +234,10 @@ Run a single test file while iterating:
 ```bash
 pytest tests/test_git.py -v
 ```
+
+### Working with AI coding agents
+
+This repo includes [`AGENTS.md`](AGENTS.md) (cross-tool guide for Cursor, Aider, etc.) and [`CLAUDE.md`](CLAUDE.md) (Claude Code specifics). Both link to [`docs/architecture.md`](docs/architecture.md), which is the canonical pipeline map.
 
 ## License
 

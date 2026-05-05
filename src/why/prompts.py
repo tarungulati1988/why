@@ -1,4 +1,29 @@
-"""Prompt-building layer for the why LLM synthesis call."""
+"""Prompt-building layer for the why LLM synthesis and grounding calls.
+
+Stage: prompts — transforms scored commits, PR metadata, and the target
+       descriptor into Message lists ready for LLMClient.complete().
+
+Inputs:
+    target      — Target dataclass (file, optional line, optional symbol).
+    current_code — source text of the region under analysis.
+    key_commits  — list[CommitWithPR] sorted oldest-first by synthesize_why.
+    repo_url     — optional GitHub URL used to render commit/PR hyperlinks.
+
+Outputs:
+    list[Message] — single-element list with role="user"; passed directly to
+                    LLMClient.complete() as the messages argument.
+
+Invariants:
+    - Every section (Target, Current Code, Commits, Timeline Data) is separated
+      by "---" horizontal rules so the LLM sees clear boundaries.
+    - User-supplied strings (file path, symbol, subject, PR body) are sanitized:
+      newlines replaced with spaces, triple-backticks escaped to prevent Markdown
+      fence injection and prompt-injection via commit subjects.
+    - A Sparse History Notice is injected when key_commits < SPARSE_COMMIT_THRESHOLD
+      (currently 3), instructing the LLM to reason from code structure.
+    - PRMetadata and CommitWithPR are defined here because they are pure data types
+      that prompts assembles; they are re-exported for callers that need them.
+"""
 
 from __future__ import annotations
 

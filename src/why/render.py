@@ -1,4 +1,20 @@
-"""Render markdown output to the terminal, or raw text when piped."""
+"""Terminal renderer for LLM Markdown output.
+
+Stage: last — called from cli.main() after synthesize_why returns.
+
+Inputs:
+    text  — Markdown string produced by synthesize_why.
+    color — True to render with Rich (default); False for plain text.
+
+Outputs:
+    Writes to stdout. Uses Rich's Console for TTY output; falls back to
+    click.echo (raw text) when stdout is not a TTY or color=False.
+
+Invariants:
+    ANSI escape sequences are stripped unconditionally before the TTY/color
+    branch, so model-generated control codes cannot corrupt terminal state
+    regardless of the output path.
+"""
 
 from __future__ import annotations
 

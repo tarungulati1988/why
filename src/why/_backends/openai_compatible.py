@@ -1,8 +1,20 @@
-"""OpenAI-compatible backend — works with Ollama, llama.cpp, LM Studio, vLLM, TGI.
+"""OpenAI-compatible backend — adapter for any /v1/chat/completions server.
 
-Note: the optional ``num_ctx`` parameter sets Ollama's KV-cache size via
-``extra_body``. Other servers ignore it; vLLM in strict-schema mode may reject
-it. Leave unset for non-Ollama backends.
+Stage: llm backend — instantiated by LLMClient when provider="openai-compatible".
+
+Inputs:
+    base_url — server base URL, e.g. "http://localhost:11434/v1" for Ollama.
+    api_key  — authentication token; defaults to "not-needed" for local servers.
+    num_ctx  — optional Ollama KV-cache size passed via extra_body; ignored by
+               other servers (vLLM in strict-schema mode may reject it — leave
+               unset for non-Ollama backends).
+
+Outputs:
+    ChatResult — content string plus optional token usage counts.
+
+Notes:
+    openai.APIConnectionError (local server crash/restart) is mapped to
+    LLMServerError so LLMClient's retry logic treats it as transient.
 """
 from __future__ import annotations
 

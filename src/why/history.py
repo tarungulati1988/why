@@ -1,15 +1,27 @@
-"""File commit history retrieval for the why CLI.
+"""File and line-level commit history retrieval.
 
-This module provides ``get_file_history``, ``get_line_history``, and
-``find_introduction``: thin orchestration layers that build git invocations
-and delegate parsing to ``parse_porcelain``.
+Stage: git/history — sits between the target (what the user pointed at) and
+       commit parsing; delegates to parse_porcelain for all output parsing.
 
-Design note — why relative paths are not normalised here:
-  ``target.py`` always resolves paths to absolute before they reach this
-  layer, so adding ``file.relative_to(repo)`` normalization here would be
-  solving a problem already handled upstream.  If a programmatic API ever
-  bypasses ``Target`` resolution and passes a relative path directly, that
-  is the right time to add normalization in this function — not before.
+Inputs:
+    file — absolute path to the file of interest (resolved by target.py).
+    repo — repository root used as cwd for git subprocesses.
+
+Outputs:
+    list[Commit] — newest-first, matching git log default ordering.
+                   get_line_history returns [] when the requested line is out
+                   of bounds.  find_introduction returns None when the file
+                   has no git history.
+
+Invariants:
+    - Paths reaching this layer are assumed to be absolute and already
+      confined to the repo root (enforced by target.py upstream). The one
+      exception is get_line_history, which adds an explicit path-confinement
+      guard because -L requires a repo-relative path and the resolution must
+      happen here.
+    - get_file_history uses --follow to traverse renames.
+    - get_line_history uses git log -L for semantic line tracking (no --follow;
+      -L handles continuity through edits but not renames).
 """
 
 from __future__ import annotations

@@ -1,4 +1,24 @@
-"""Entry point for the why CLI."""
+"""Entry point for the why CLI.
+
+Stage: first — parses user arguments, wires together all pipeline objects, and
+       delegates orchestration to synthesize_why.
+
+Inputs:
+    TARGET  — file path, optionally with :<line> suffix (CLI argument).
+    SYMBOL  — optional symbol name positional argument.
+    flags   — --model, --no-color, --verify, --brief, --deep, --max-commits,
+              --no-cache, --no-strict-citations.
+
+Outputs:
+    Rendered Markdown printed to stdout via render_output; exits non-zero on any
+    recoverable error (TargetError, LLMError, GitError, CitationError).
+
+Notes:
+    GitHub client and PR cache are both optional; both are skipped when no GitHub
+    remote is detected or when the repo URL is not a github.com URL.
+    strict-citations mode is auto-enabled for the "openai-compatible" provider
+    and can be overridden with --no-strict-citations.
+"""
 
 import sys
 from pathlib import Path

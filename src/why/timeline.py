@@ -1,12 +1,26 @@
-"""Timeline validation and deterministic rendering for why LLM output.
+"""Timeline validation and deterministic repair for LLM output.
 
-This module provides two public functions:
+Stage: post-LLM — called in synthesize_why immediately after validate_citations,
+       before the optional two-pass grounding step.
 
-- ``render_deterministic_timeline``: builds the ASCII timeline block directly
-  from ``key_commits`` without calling the LLM, ensuring correctness.
+Inputs:
+    response    — raw LLM response string (may or may not contain a timeline section).
+    key_commits — list[CommitWithPR] that were provided to the LLM as context;
+                  used both as the source of truth for SHA validation and as the
+                  data source for deterministic rendering.
+    repo_url    — accepted for forward compatibility; not currently used in rendering.
 
-- ``validate_and_repair_timeline``: checks that every SHA in an LLM-generated
-  timeline block is known; replaces the block with a deterministic one if not.
+Outputs:
+    str — response with a validated ## 📊 Timeline section; either the original
+          (if all SHAs are known) or a deterministic replacement built from
+          key_commits.
+
+Invariants:
+    - If the LLM omits the timeline section entirely, a deterministic one is appended.
+    - Any 7-char hex token in the timeline block that doesn't match a known short
+      SHA triggers a full replacement of the section.
+    - re.sub uses a lambda replacement (not a string) to prevent backreference
+      interpretation of commit subjects that contain \\1 or \\g<0> patterns.
 """
 
 from __future__ import annotations

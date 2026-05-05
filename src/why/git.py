@@ -1,4 +1,24 @@
-"""Thin, defensive wrapper around git subprocess calls."""
+"""Thin, defensive subprocess wrapper for git commands.
+
+Stage: infrastructure — used by history.py and diff.py; not called directly
+       from the main pipeline.
+
+Inputs:
+    args    — list of git sub-command arguments (without the leading "git").
+    cwd     — repository root; passed as the subprocess working directory.
+    timeout — seconds before GitTimeoutError is raised (default 30).
+
+Outputs:
+    str — verbatim stdout of the git command (trailing newline preserved).
+
+Invariants:
+    - _HARDENING_ENV is layered on top of os.environ for every invocation;
+      it disables terminal prompts, forces the C locale, and suppresses pagers.
+    - LC_ALL=C is required so that English stderr phrases like
+      "not a git repository" can be matched for error classification.
+    - Stdout is returned unstripped — callers that want a stripped value must
+      call .rstrip() themselves.
+"""
 
 from __future__ import annotations
 
